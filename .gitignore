@@ -1,0 +1,23 @@
+# CubeIDE build directories
+**/Debug/
+**/Release/
+**/build/
+# Compiler/linker outputs
+*.o
+*.d
+*.su
+*.cyclo
+*.elf
+*.hex
+*.bin
+*.map
+*.list
+*.lst
+*.a
+# Local workspace only; retain .project/.cproject/.settings/.ioc
+.metadata/
+# Temporary files
+*~
+*.swp
+.DS_Store
+Thumbs.db
