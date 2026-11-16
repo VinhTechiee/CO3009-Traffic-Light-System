@@ -1,8 +1,9 @@
 # DHT20 protocol layer
 
 This layer parses a completed measurement only. It has no transport, clock,
-mutable module state, allocation, or initialization dependency. Existing
-`dht20.h` and `dht20.c` remain unchanged.
+mutable module state, allocation, or initialization dependency. The protocol
+phase originally left `dht20.h` and `dht20.c` unchanged; the subsequent driver
+phase implements them as described in [dht20-driver.md](dht20-driver.md).
 
 ## Verified manufacturer references
 
@@ -98,8 +99,11 @@ polynomial long-division oracle.
 
 ## Remaining integration
 
-The future driver must acquire seven coherent bytes, perform startup/configuration
-and measurement commands, wait without blocking, handle timeouts/recovery, and
-publish successful samples with an agreed freshness policy. B must verify the
-actual board/I2C configuration and physical bus arrangement. No HAL, I2C address
-convention, pin mapping, scheduler registration or transport code is added here.
+The cooperative driver now acquires seven coherent bytes through an injected
+asynchronous transport, handles startup/measurement/recovery, and publishes
+protocol-valid frames with their observed reception timestamp. Delayed valid
+frames publish as stale; invalid frames preserve last-good data. Reconfiguration
+preserves sample age. See [driver policy and integration](dht20-driver.md).
+The parser itself is unchanged and supplies no freshness or hardware behavior.
+B must still supply and validate the actual transport, board/I2C configuration
+and physical bus arrangement; no HAL or pin mapping is introduced here.
