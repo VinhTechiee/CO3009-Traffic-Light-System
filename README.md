@@ -42,3 +42,11 @@
 - Repo có README hướng dẫn build/flash/operate, đủ commit của 3 thành viên, tag cuối và báo cáo PDF theo template của môn.
 
 > **Cần đối chiếu:** tài liệu hướng dẫn còn dẫn tới `Project_Group.docx` (đặc tả chi tiết). Khi có file này, chốt lại mapping nút, ràng buộc thời gian và hành vi từng mode trước khi code cuối.
+
+## Scaffold status
+
+Public headers and intentionally unimplemented source shells are in `Core/Inc`
+and `Core/Src`. See [architecture and proposed contracts](docs/architecture.md),
+[integration checklist](docs/integration-checklist.md), and [team conventions](AGENTS.md).
+No CubeIDE project or `.ioc` is included yet; firmware build/flash is not validated.
+The detailed `Project_Group.docx` specification is not present in this repository.
