@@ -14,6 +14,7 @@
 *.list
 *.lst
 *.a
+./.vscode
 # Local workspace only; retain .project/.cproject/.settings/.ioc
 .metadata/
 # Temporary files
