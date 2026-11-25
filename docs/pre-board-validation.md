@@ -20,7 +20,7 @@
 | Full application | PASS | Save and cancel, 30 mode loops, shared-bus faults and recovery, and one simulated hour. Asserted the dual-green invariant after each mock GPIO write and scheduler step. |
 | Physical flash, measurements and acceptance | NOT RUN | See the [board checklist](board-demo-checklist.md). |
 
-Run the host tests with the [README commands](../README.md#build-and-test). Run the same suite with sanitizers in the default WSL distribution and check whitespace with these commands.
+Run the host tests with the [README commands](../README.md#build-and-flash). Run the same suite with sanitizers in the default WSL distribution and check whitespace with these commands.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-c-host-tests.ps1 -WslSanitizers
@@ -31,7 +31,7 @@ The suites also cover scheduler add/delete, relative deadlines, task IDs and cap
 
 ## Target builds
 
-Clean Release builds used STM32CubeF1 V1.8.7, ARM GNU 14.3.1 from STM32CubeCLT 1.22.0, CMake 4.3.1 and Ninja 1.13.2. Use the [README commands](../README.md#build-and-test) for the default application and diagnostic. Each build uses the vendor CMSIS startup and produces ELF, HEX, BIN and map files.
+Clean Release builds used STM32CubeF1 V1.8.7, ARM GNU 14.3.1 from STM32CubeCLT 1.22.0, CMake 4.3.1 and Ninja 1.13.2. Use the [README commands](../README.md#build-and-flash) for the default application and diagnostic. Each build uses the vendor CMSIS startup and produces ELF, HEX, BIN and map files.
 
 | Image | Result | Flash / 131072 B | RAM / 20480 B including 1 KiB stack reserve |
 | --- | --- | ---: | ---: |
