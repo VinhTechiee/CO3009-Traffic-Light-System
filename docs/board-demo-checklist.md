@@ -17,7 +17,7 @@ Power down before wiring. Disconnect the traffic decoders for initial tests. Con
 | SWDIO / SWCLK | SWD header | PA13 / PA14 |
 | Diagnostic tick / one-shot | D13 / CN10-2 | PA5 / PC9 |
 
-Use the [README build commands](../README.md#build-and-test) to generate both images. From the repository root, program the diagnostic and confirm verification. Adjust the STM32CubeCLT path to match the installed version.
+Use the [README build commands](../README.md#build-and-flash) to generate both images. From the repository root, program the diagnostic and confirm verification. Adjust the STM32CubeCLT path to match the installed version.
 
 ```powershell
 $clt = 'C:\ST\STM32CubeCLT_1.22.0'
