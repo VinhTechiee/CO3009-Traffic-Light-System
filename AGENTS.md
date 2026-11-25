@@ -21,5 +21,5 @@ no HAL_Delay or busy waits. Only SCH_Update belongs in the tick ISR; protect
 shared scheduler state with short critical sections, not volatile alone.
 Prevent both logical and transient physical dual green.
 
-This scaffold contains declarations and source shells only. Do not claim feature
-completion, build success or passing tests without actual evidence.
+Record software results in docs/pre-board-validation.md and physical acceptance
+results using docs/board-demo-checklist.md. Report only checks that were run.
