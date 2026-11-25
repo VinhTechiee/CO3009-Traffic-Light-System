@@ -1,40 +1,42 @@
-# Firmware architecture and integration contracts
+# Firmware architecture
 
-The application runs on STM32F103RB. The .ioc defines the pin assignments and peripheral settings. The CMake build uses the matching CMSIS startup, STM32CubeF1 HAL, and the repository's 128 KiB Flash / 20 KiB SRAM linker script. Board wiring and electrical calibration are covered in the [board checklist](board-demo-checklist.md).
+The STM32F103RB build uses STM32CubeF1 HAL, CMSIS startup, and the repository linker script for 128 KiB Flash and 20 KiB SRAM. The CubeMX `.ioc` records the peripheral configuration. For the pin assignments, profile settings, and bench measurements, see the [board checklist](board-demo-checklist.md).
 
 ## Startup and scheduling
 
-Main initializes HAL, the system clock, GPIO, USART2, I2C1, and TIM2. With a measured profile, the board layer preloads both Red decoder codes while the traffic pins are inputs and enables one road's output pins at a time. The runtime initializes traffic, configured buttons, scheduler time, software timers, and mode policy. It configures available I2C services and starts Automatic before enabling the TIM2 interrupt. Registration failure deletes registered tasks and startup requests all-red.
+`main` initializes HAL, clocking, GPIO, USART2, I2C1, and TIM2. An enabled traffic profile preloads both Red codes while the decoder pins are inputs, then enables the outputs one road at a time. `app_runtime_start` initializes the traffic and optional services, registers callbacks, and enters Automatic before TIM2 starts. If runtime startup fails, the app removes any registered tasks and requests all-red.
 
-The 8 MHz HSI feeds the PLL through /2 ×16 for 64 MHz SYSCLK/HCLK. APB1 runs at 32 MHz with the ×2 timer clock rule, giving TIM2 64 MHz. Prescaler 7999 and ARR 79 yield 100 Hz nominal. Startup compares the hardware clock configuration and timer counts with the application's 10 ms tick. TIM2's update callback calls only `SCH_Update`. SysTick independently advances the HAL millisecond clock. I2C1 is remapped to PB8/PB9 at 100 kHz. The equal-priority event and error IRQs forward to HAL and then the adapter. TIM2 has higher priority than either I2C IRQ. PA13/PA14 retain SWD while PB3/PB4 are released from JTAG.
+The 8 MHz HSI feeds the PLL through `/2 × 16`. SYSCLK and HCLK are 64 MHz. APB1 runs at 32 MHz and supplies TIM2 at 64 MHz through the timer clock multiplier. Prescaler 7999 and ARR 79 produce a nominal 100 Hz update rate. Startup checks the configured division against the 10 ms scheduler tick. TIM2's application callback calls only `SCH_Update`. SysTick supplies the independent HAL millisecond clock.
 
 | Foreground callback | Period | Responsibility |
 | --- | --- | --- |
-| `button_task` | 10 ms | Sample the measured inputs, debounce and queue logical events when enabled. |
-| `fsm_mode_task` | 10 ms | Consume one event and dispatch the active FSM. |
-| `dht20_task` | 10 ms | Advance sensor startup, conversion, receive, or recovery by one bounded step. |
-| `lcd_task` | 10 ms | Advance a display initialization or line transfer when enabled. |
-| `lcd_display_task` | 100 ms | Format mode, timing, and sensor snapshots and submit changed rows. |
-| Sensor restart check | 5 s | Restart a sensor that exhausted its driver retry budget. |
+| `button_task` | 10 ms | Debounce enabled inputs and queue logical events |
+| `fsm_mode_task` | 10 ms | Consume one event and dispatch the active mode |
+| `dht20_task` | 10 ms | Advance sensor initialization, acquisition, or recovery |
+| `lcd_task` | 10 ms | Advance display initialization or a line transfer |
+| `lcd_display_task` | 100 ms | Format snapshots and submit changed rows |
+| `app_retry_sensor` | 5 s | Restart the sensor after its retry budget is exhausted |
 
-The main loop calls `SCH_Dispatch_Tasks`. The scheduler keeps a foreground relative-delay queue with stable ordering for simultaneous deadlines. Adding a task requires a nonzero initial delay. Period zero creates a one-shot. ISR work is one fixed-width epoch increment. Foreground snapshots of the 64-bit clock save and restore PRIMASK. Dispatch coalesces missed periodic callbacks and resumes on their original cadence. Software timers read scheduler ticks so they account for elapsed time during delayed dispatch. When Automatic is serviced late it starts the next visible phase at that time, preserving its full duration.
+`SCH_Update` increments a 64-bit tick counter in constant time. The foreground snapshots it with PRIMASK saved and restored. `SCH_Dispatch_Tasks` services a relative-delay queue in stable order for equal deadlines. Registration requires a positive initial delay. A zero period makes a task one-shot. Missed periodic callbacks coalesce while the next deadline stays on the original cadence. Software timers use the elapsed scheduler ticks. A late Automatic callback starts the next phase at dispatch and gives it its full duration.
 
-## Modes, buttons, and outputs
+## Input and output boundaries
 
-The application FSMs consume logical events and call the traffic driver without HAL or pin dependencies. Mode takes an Automatic snapshot before exit, cancels the outgoing FSM through its exit API, flushes pending and held input, requests all-red, and enters the destination. Automatic frees its phase timer. Manual freezes the incoming lamp pair when that pair corresponds to a manual phase and advances once per BTN2 press. Tuning holds all-red, changes a draft and preserves the last valid value after a rejected edit. On save, Mode publishes the draft after successful Automatic entry. Cancel restarts Automatic with the existing configuration. Mode timings are held in RAM.
+The FSMs consume logical button events and use the traffic driver without HAL or pin dependencies. The [FSM design](fsm-mode-design.md) describes event routing, mode transitions, tuning limits, and the explicit All-Red phase.
 
-The demo starts with Red 5000 ms, Green 3000 ms and Yellow 2000 ms. Red, Green and Yellow are independently adjustable in 1000 ms steps. Valid ranges are 2000–40000 ms, 1000–30000 ms and 1000–10000 ms respectively. Red must cover Green plus Yellow both in milliseconds and after rounding to scheduler ticks. Automatic runs R/G → R/Y → optional R/R → G/R → Y/R. The optional all-red interval is the excess of Red over Green plus Yellow, applied once per complete cycle.
+The traffic driver validates each requested pair before writing GPIO. It rejects dual Green, removes an outgoing Green before enabling Green on the other road, and routes a two-bit decoder change through a non-Green code. Physical reset bias and lamp transitions are bench acceptance checks.
 
-The button driver requires three consistent samples. BTN2 and USER distinguish long presses at 500 ms and 1500 ms. BTN3/BTN4 emit adjustment repeats after 500 ms, then every 250 ms. When both adjustment buttons are held, adjustment input is suppressed until both release. A held input at mode handoff requires a debounced release before it can act again.
+## Shared I2C and display
 
-The traffic driver rejects a dual-green request before touching outputs. Per-road decoder codes are validated by the profile. The driver removes the previous Green first and routes two-bit changes through a non-Green intermediate. The physical reset bias and actual lamp transitions remain board checks.
+I2C1 is remapped to PB8/PB9 at 100 kHz. The event and error IRQs share a priority below TIM2. PA13/PA14 retain SWD while JTAG releases PB3/PB4.
 
-## Shared I2C and presentation
+LCD and DHT20 share an `i2c_async_t` backend. Each accepted transfer has one owner and token. The STM32 adapter shifts 7-bit addresses at the HAL boundary, stages data privately, and copies RX data only after success. It offers a waiting client the next free slot for a bounded interval. Ownership retires after completion or after the adapter quiesces the peripheral on error or cancellation. A prolonged BUSY state or abort timeout reinitializes I2C1. A device holding the bus low may require isolation or power cycling.
 
-LCD and DHT20 share a copied transport table with the same backend context. The backend admits one owner/token at a time and gives a contending client a short opportunity to acquire the next free slot. HAL interrupts use a bounded private staging buffer. Foreground releases ownership only after completion or after quiescing the peripheral on error or cancellation. The backend reconfigures I2C1 after an abort timeout or sustained bus busy. A device holding SCL or SDA low may require physical isolation and power cycling.
+The optional LCD adapter targets a profiled HD44780-compatible panel with a PCF8574/A backpack. Transfers advance in bounded steps. Failure triggers a backoff, reinitialization, and repaint of the buffered rows. A two-row display shares its second row between timing in Tuning and the sensor reading elsewhere. Three or more rows permit dedicated timing and sensor rows. Peripheral failures leave traffic scheduling active.
 
-The DHT20 uses 7-bit address 0x38 and a minimum 2 s measurement interval. The driver verifies status and CRC, retains the last good values through transient faults, and reports stale or unavailable data. The display adapter supports an explicitly configured HD44780-compatible panel with a PCF8574/A backpack. It sends bounded packets, backs off on failure, reinitializes the controller and repaints the buffered rows. A failed optional peripheral leaves traffic scheduling active. See [the DHT20 driver](dht20-driver.md) and [board profile calibration](board-demo-checklist.md).
+### DHT20
 
-## Evidence and remaining inputs
+The driver receives a clock and the shared transport through `dht20_configure`. It waits 500 ms at startup, then reads one status byte at address `0x38`. A ready sensor has busy bit 7 clear and both `0x18` bits set. If repair is needed, the driver sends `[register, 0, 0]` for each of `0x1B`, `0x1C`, and `0x1E`, waits at least 5 ms, reads three bytes, waits at least 10 ms, and restores the last two bytes with command `0xB0 | register`. It waits at least 10 ms after the final restore before checking status again. [Aosong DHT20 datasheet, V1.0](https://asairsensors.com/wp-content/uploads/2021/09/Data-Sheet-DHT20-Humidity-and-Temperature-Module-ASAIR-V1.0.03.pdf) · [Aosong reference program](https://www.aosong.com/userfiles/files/software/AHT20-21%20DEMO%20V1_3%281%29.rar)
 
-[Pre-board validation](pre-board-validation.md) records the tested source and results. The team still needs the official Project_Group specification for course-specific gestures and timing rules, and the actual shield at the bench for polarity, truth tables, LCD identity, and measured bus and clock behavior.
+At least 10 ms after initialization or publication, the driver can send `AC 33 00`. It releases the bus during the 80 ms minimum conversion interval, then reads seven bytes as a single frame. A busy response with valid CRC triggers another read within the conversion deadline. The parser checks an MSB-first CRC-8 over the first six bytes using polynomial `0x31` and initial value `0xFF`, then checks busy, OTP integrity (bit 4), and calibration (bit 3). The two packed 20-bit fields give `raw × 100 / 2^20` percent RH and `raw × 200 / 2^20 − 50` °C. The V1.3 specification documents bit 4, which the V1.0 table labels reserved. [Aosong DHT20 specification, V1.3](https://manuals.plus/m/6fb94a2f5bcc906a21ab17092318ce41f04d0b1bcdb237cbcf11e6dbf6c72dbb)
+
+Application settings are a 2 s minimum measurement interval, a 100 ms limit each for bus acquisition and transfer completion, a 250 ms conversion deadline, and a 5 s freshness threshold. The driver allows two retries with a 2 s backoff. If the retry budget is exhausted, it reports unavailable and the five-second supervisor can restart it. Failed frames preserve the last good sample and its reception timestamp. Age runs from the observed completion of the successful receive, accumulates across clock wrap, and saturates at `UINT32_MAX`. Once stale, the reading stays stale until a valid frame arrives.

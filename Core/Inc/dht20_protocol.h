@@ -10,7 +10,7 @@
 /* CRC-8 over exactly six bytes (status + packed measurements).
  * Poly 0x31, init 0xFF, MSB first, no reflection or final XOR.
  * NULL or a length other than six: APP_INVALID_ARGUMENT.
- * Output is unchanged on failure. See docs/dht20-protocol.md for sources.
+ * Output is unchanged on failure. See docs/architecture.md#dht20.
  */
 app_status_t dht20_protocol_crc8(const uint8_t *data, size_t length,
                                uint8_t *crc);
