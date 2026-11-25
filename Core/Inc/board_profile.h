@@ -13,9 +13,16 @@
 /* The controller board pin assignments are in main.h and the .ioc. Enable
  * push-pull traffic outputs only after verifying both decoders and reset bias.
  * Values are two-bit electrical levels with A as bit 1 and B as bit 0.
- * The defaults preserve the previous firmware's unverified truth table. */
+ * The defaults are for the logic-only image and unconfigured host tests. */
 #ifndef CO3009_TRAFFIC_PROFILE_ENABLED
 #define CO3009_TRAFFIC_PROFILE_ENABLED 0
+#endif
+#if CO3009_TRAFFIC_PROFILE_ENABLED && ( \
+    !defined(CO3009_TRAFFIC_ROAD1_OFF_CODE) || !defined(CO3009_TRAFFIC_ROAD1_RED_CODE) \
+    || !defined(CO3009_TRAFFIC_ROAD1_YELLOW_CODE) || !defined(CO3009_TRAFFIC_ROAD1_GREEN_CODE) \
+    || !defined(CO3009_TRAFFIC_ROAD2_OFF_CODE) || !defined(CO3009_TRAFFIC_ROAD2_RED_CODE) \
+    || !defined(CO3009_TRAFFIC_ROAD2_YELLOW_CODE) || !defined(CO3009_TRAFFIC_ROAD2_GREEN_CODE))
+#error Define all measured decoder codes before enabling traffic GPIO outputs
 #endif
 #ifndef CO3009_TRAFFIC_ROAD1_OFF_CODE
 #define CO3009_TRAFFIC_ROAD1_OFF_CODE 0U

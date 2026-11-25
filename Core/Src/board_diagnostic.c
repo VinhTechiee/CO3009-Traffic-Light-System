@@ -41,7 +41,8 @@ static void board_diagnostic_one_shot(void)
 app_status_t board_diagnostic_start(I2C_HandleTypeDef *i2c)
 {
     if (i2c != NULL) {
-        /* Diagnostic boot scan only, before starting TIM2 or dispatching tasks. */
+        /* Diagnostic boot only. Give the DHT20 its power-up time before scanning. */
+        HAL_Delay(500U);
         for (uint16_t address = 0x08U; address <= 0x77U; ++address) {
             board_diagnostic_i2c_ack[address] =
                 HAL_I2C_IsDeviceReady(i2c, (uint16_t)(address << 1U), 1U, 3U) == HAL_OK;
