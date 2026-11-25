@@ -80,7 +80,7 @@ SECTIONS
         PROVIDE(end = .);
         PROVIDE(_end = .);
         . += _min_stack_size;
-    } > RAM :ram
+    } > RAM :NONE
 
     /DISCARD/ : { *(.note.GNU-stack) }
 }
