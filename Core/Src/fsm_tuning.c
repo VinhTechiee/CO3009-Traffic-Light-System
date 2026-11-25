@@ -1,4 +1,5 @@
 #include "fsm_tuning.h"
+#include "timing_rules.h"
 
 #include <stddef.h>
 
@@ -25,18 +26,16 @@ static bool fsm_tuning_policy_valid(const fsm_tuning_policy_t *policy)
     return policy != NULL && policy->step_ms > 0U
         && fsm_tuning_range_valid(policy->red)
         && fsm_tuning_range_valid(policy->green)
-        && fsm_tuning_range_valid(policy->yellow)
-        && (policy->red_adjusts == TRAFFIC_GREEN || policy->red_adjusts == TRAFFIC_YELLOW);
+        && fsm_tuning_range_valid(policy->yellow);
 }
 
 app_status_t fsm_tuning_validate(const fsm_tuning_policy_t *policy,
                                  const timing_config_t *config)
 {
-    if (!fsm_tuning_policy_valid(policy) || config == NULL
+    if (!fsm_tuning_policy_valid(policy) || !timing_config_valid(config)
         || !fsm_tuning_contains(policy->red, config->red_ms)
         || !fsm_tuning_contains(policy->yellow, config->yellow_ms)
-        || !fsm_tuning_contains(policy->green, config->green_ms)
-        || (uint64_t)config->green_ms + config->yellow_ms != config->red_ms) {
+        || !fsm_tuning_contains(policy->green, config->green_ms)) {
         return APP_INVALID_ARGUMENT;
     }
     return APP_OK;
@@ -98,11 +97,13 @@ void fsm_tuning_on_button(const button_event_t *event)
 static app_status_t fsm_tuning_adjust(bool increase)
 {
     timing_config_t candidate = fsm_tuning.view.draft;
-    traffic_color_t color = fsm_tuning.view.selected;
-    if (color == TRAFFIC_RED) {
-        color = fsm_tuning.policy.red_adjusts;
+    uint32_t *duration;
+    switch (fsm_tuning.view.selected) {
+    case TRAFFIC_RED: duration = &candidate.red_ms; break;
+    case TRAFFIC_GREEN: duration = &candidate.green_ms; break;
+    case TRAFFIC_YELLOW: duration = &candidate.yellow_ms; break;
+    default: return APP_INVALID_ARGUMENT;
     }
-    uint32_t *duration = color == TRAFFIC_GREEN ? &candidate.green_ms : &candidate.yellow_ms;
     const int64_t step = fsm_tuning.policy.step_ms;
     const int64_t adjusted = (int64_t)*duration + (increase ? step : -step);
     if (adjusted <= 0 || adjusted > UINT32_MAX) {
@@ -110,11 +111,6 @@ static app_status_t fsm_tuning_adjust(bool increase)
     }
 
     *duration = (uint32_t)adjusted;
-    const uint64_t red = (uint64_t)candidate.green_ms + candidate.yellow_ms;
-    if (red > UINT32_MAX) {
-        return APP_INVALID_ARGUMENT;
-    }
-    candidate.red_ms = (uint32_t)red;
     const app_status_t status = fsm_tuning_validate(&fsm_tuning.policy, &candidate);
     if (status == APP_OK) {
         fsm_tuning.view.draft = candidate;

@@ -3,22 +3,22 @@
 #include <stddef.h>
 
 #if defined(STM32F103xB) && defined(USE_HAL_DRIVER)
-#include "stm32f1xx_hal.h"
+#include "main.h"
 
 /* GPIO inputs configured in the .ioc. Read levels before applying polarity. */
 static bool button_read_stm32_high(button_id_t id)
 {
     switch (id) {
         case BUTTON_ID_1:  /* D7 */
-            return HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_SET;
+            return HAL_GPIO_ReadPin(BTN_1_GPIO_Port, BTN_1_Pin) == GPIO_PIN_SET;
         case BUTTON_ID_2:  /* D8 */
-            return HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET;
+            return HAL_GPIO_ReadPin(BTN_2_GPIO_Port, BTN_2_Pin) == GPIO_PIN_SET;
         case BUTTON_ID_3:  /* D9 */
-            return HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7) == GPIO_PIN_SET;
+            return HAL_GPIO_ReadPin(BTN_3_GPIO_Port, BTN_3_Pin) == GPIO_PIN_SET;
         case BUTTON_ID_4:  /* D10 */
-            return HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_6) == GPIO_PIN_SET;
+            return HAL_GPIO_ReadPin(BTN_4_GPIO_Port, BTN_4_Pin) == GPIO_PIN_SET;
         case BUTTON_ID_USER:
-            return HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_SET;
+            return HAL_GPIO_ReadPin(BTN_USER_GPIO_Port, BTN_USER_Pin) == GPIO_PIN_SET;
         default:
             return false;
     }

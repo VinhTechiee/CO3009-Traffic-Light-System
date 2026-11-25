@@ -17,7 +17,7 @@ typedef struct {
 typedef struct {
     fsm_tuning_range_t red, green, yellow;
     uint32_t step_ms;
-    /* When editing red, this duration moves by the same step as red. */
+    /* Legacy field retained for existing initializers. Edits are independent. */
     traffic_color_t red_adjusts;
 } fsm_tuning_policy_t;
 
@@ -32,6 +32,7 @@ typedef struct {
     app_status_t edit_status;
 } fsm_tuning_view_t;
 
+/* Require Red >= Green + Yellow in milliseconds and rounded-up ticks. */
 app_status_t fsm_tuning_validate(const fsm_tuning_policy_t *policy,
                                  const timing_config_t *config);
 app_status_t fsm_tuning_configure(const fsm_tuning_policy_t *policy);

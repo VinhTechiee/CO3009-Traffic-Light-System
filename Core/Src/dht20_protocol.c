@@ -1,7 +1,7 @@
 #include "dht20_protocol.h"
 
 /* Aosong DHT20: V1.0 sections 7.3/7.4/8; V1.3 table 8 and section 5.2.
- * References and revision differences: docs/dht20-protocol.md.
+ * See docs/architecture.md#dht20 for references and revision differences.
  */
 app_status_t dht20_protocol_crc8(const uint8_t *data, size_t length,
                                uint8_t *crc)

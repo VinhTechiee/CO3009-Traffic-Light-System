@@ -19,6 +19,7 @@ typedef struct {
     /* Repeated with the same padded line and arguments until terminal.
      * APP_BUSY/APP_NOT_READY keeps the operation pending. Other statuses
      * are terminal and release all references to the LCD line buffer.
+     * APP_IO_ERROR causes controller preparation and a complete repaint.
      * Adapter owns device protocol, deadlines/abort, and a unique bus owner. */
     app_status_t (*write_line)(void *context, const i2c_async_t *bus, uint8_t address_7bit,
                                uint8_t row, const char *text, uint8_t columns);

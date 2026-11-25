@@ -30,7 +30,7 @@ app_status_t fsm_mode_get(app_mode_t *out)
 
 app_status_t fsm_tuning_get(fsm_tuning_view_t *view)
 {
-    *view = (fsm_tuning_view_t){{1500, 500, 1000}, TRAFFIC_YELLOW, FSM_TUNING_EDITING, APP_OK};
+    *view = (fsm_tuning_view_t){{1600, 500, 1000}, TRAFFIC_RED, FSM_TUNING_EDITING, APP_OK};
     return APP_OK;
 }
 
@@ -219,7 +219,7 @@ int main(void)
     mode = APP_MODE_TUNING;
     run(8, true);
     assert(strcmp(screen[0], "Tuning              ") == 0);
-    assert(strcmp(screen[1], "Yellow 500 ms       ") == 0);
+    assert(strcmp(screen[1], "Red 1600 ms         ") == 0);
     mode = APP_MODE_MANUAL;
     run(110, true);
     assert(strcmp(screen[0], "Manual              ") == 0);

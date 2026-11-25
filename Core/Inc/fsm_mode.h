@@ -22,14 +22,15 @@ typedef struct {
     fsm_tuning_policy_t timing;
     app_mode_t after_confirm;
     app_mode_t after_cancel;
-    /* Optional proposed A adapter; snapshot before Automatic exit. */
+    /* Optional applied-phase provider. If unavailable, Manual starts all-red. */
     app_status_t (*automatic_phase)(traffic_state_t *phase);
     fsm_mode_binding_t bindings[3][FSM_MODE_BINDINGS_PER_MODE];
 } fsm_mode_config_t;
 
 /* Supply agreed policies and per-mode bindings before init. An all-zero row
  * leaves mode switching to explicit requests. Both outcome modes must be
- * Automatic or Manual. Manual BTN2 is reserved for its existing PRESS action. */
+ * Automatic or Manual. Manual BTN2 is reserved for its PRESS action. A Tuning
+ * adjustment may pair PRESS and REPEAT on BTN3/4 with the same action. */
 app_status_t fsm_mode_configure(const fsm_mode_config_t *config);
 /* Explicit initial mode; copy configuration, retain no caller pointer. */
 app_status_t fsm_mode_init(app_mode_t initial_mode, const timing_config_t *config);

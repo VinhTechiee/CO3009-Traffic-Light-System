@@ -18,6 +18,8 @@ typedef struct
 static software_timer_entry_t g_timers[SOFTWARE_TIMER_MAX_COUNT];
 static software_timer_id_t g_next_timer_id = 1U;
 static uint8_t g_initialized;
+static software_timer_clock_fn_t g_clock_ticks;
+static uint64_t g_last_tick;
 
 static uint8_t timer_id_in_use(software_timer_id_t id)
 {
@@ -74,8 +76,54 @@ void software_timer_init(void)
         g_timers[i].expired = 0U;
     }
 
-    g_next_timer_id = 1U;
+    g_clock_ticks = NULL;
     g_initialized = 1U;
+}
+
+app_status_t software_timer_init_with_clock(software_timer_clock_fn_t clock_ticks)
+{
+    if (clock_ticks == NULL)
+    {
+        return APP_INVALID_ARGUMENT;
+    }
+
+    software_timer_init();
+    g_clock_ticks = clock_ticks;
+    g_last_tick = clock_ticks();
+    return APP_OK;
+}
+
+static void software_timer_advance(uint64_t elapsed_ticks)
+{
+    if (elapsed_ticks == 0U)
+    {
+        return;
+    }
+    for (uint32_t i = 0U; i < SOFTWARE_TIMER_MAX_COUNT; ++i)
+    {
+        if (g_timers[i].used != 0U && g_timers[i].expired == 0U)
+        {
+            if (elapsed_ticks < g_timers[i].remaining_ticks)
+            {
+                g_timers[i].remaining_ticks -= (uint32_t)elapsed_ticks;
+            }
+            else
+            {
+                g_timers[i].remaining_ticks = 0U;
+                g_timers[i].expired = 1U;
+            }
+        }
+    }
+}
+
+static void software_timer_sample_clock(void)
+{
+    if (g_clock_ticks != NULL)
+    {
+        const uint64_t now = g_clock_ticks();
+        software_timer_advance(now - g_last_tick);
+        g_last_tick = now;
+    }
 }
 
 app_status_t software_timer_start(uint32_t duration_ticks,
@@ -112,6 +160,7 @@ app_status_t software_timer_start(uint32_t duration_ticks,
         return APP_NO_CAPACITY;
     }
 
+    software_timer_sample_clock();
     g_timers[i].id = new_id;
     g_timers[i].remaining_ticks = duration_ticks;
     g_timers[i].expired = 0U;
@@ -158,6 +207,7 @@ app_status_t software_timer_is_expired(software_timer_id_t id, bool *expired)
         return APP_NOT_READY;
     }
 
+    software_timer_sample_clock();
     *expired = false;
     for (i = 0U; i < SOFTWARE_TIMER_MAX_COUNT; ++i)
     {
@@ -171,29 +221,19 @@ app_status_t software_timer_is_expired(software_timer_id_t id, bool *expired)
     return APP_NOT_FOUND;
 }
 
-/* Foreground callback: schedule this exactly once per Scheduler tick. */
 void software_timer_tick(void)
 {
-    uint32_t i;
-
     if (g_initialized == 0U)
     {
         return;
     }
 
-    for (i = 0U; i < SOFTWARE_TIMER_MAX_COUNT; ++i)
+    if (g_clock_ticks != NULL)
     {
-        if ((g_timers[i].used != 0U) && (g_timers[i].expired == 0U))
-        {
-            if (g_timers[i].remaining_ticks > 1U)
-            {
-                --g_timers[i].remaining_ticks;
-            }
-            else
-            {
-                g_timers[i].remaining_ticks = 0U;
-                g_timers[i].expired = 1U; /* Sticky until cancel. */
-            }
-        }
+        software_timer_sample_clock();
+    }
+    else
+    {
+        software_timer_advance(1U);
     }
 }

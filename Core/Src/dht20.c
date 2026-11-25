@@ -2,7 +2,7 @@
 #include "dht20_protocol.h"
 #include <limits.h>
 
-/* Provenance: docs/dht20-driver.md. All waits start after observed completion. */
+/* Transfer-dependent waits start at observed completion. See docs/architecture.md#dht20. */
 #define DHT20_ADDRESS_7BIT UINT8_C(0x38)
 #define DHT20_POWER_UP_MS UINT32_C(500)
 #define DHT20_CONVERSION_MS UINT32_C(80)

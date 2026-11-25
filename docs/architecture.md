@@ -1,86 +1,42 @@
-# Architecture and proposed API contracts
+# Firmware architecture
 
-## Status and dependencies
+The STM32F103RB build uses STM32CubeF1 HAL, CMSIS startup, and the repository linker script for 128 KiB Flash and 20 KiB SRAM. The CubeMX `.ioc` records the peripheral configuration. For the pin assignments, profile settings, and bench measurements, see the [board checklist](board-demo-checklist.md).
 
-Only README.md existed at inspection. The referenced Project_Group.docx is absent.
-These proposed contracts need team review. Sources intentionally implement none
-of their declared functions; an application using them will not link yet.
-There is no CubeIDE project, HAL, startup, main.c or .ioc. global.c defines no state.
+## Startup and scheduling
 
-Generated initialization -> drivers and scheduler initialization.
-Timer interrupt -> SCH_Update only.
-Foreground superloop -> SCH_Dispatch_Tasks -> registered bounded callbacks.
-fsm_mode -> button event queue -> active Automatic/Manual/Tuning FSM.
-Active FSM -> software_timer and traffic_light; presentation -> lcd and dht20.
-All modules -> global types. No FSM may depend on HAL or board pin definitions.
+`main` initializes HAL, clocking, GPIO, USART2, I2C1, and TIM2. An enabled traffic profile preloads both Red codes while the decoder pins are inputs, then enables the outputs one road at a time. `app_runtime_start` initializes the traffic and optional services, registers callbacks, and enters Automatic before TIM2 starts. If runtime startup fails, the app removes any registered tasks and requests all-red.
 
-## A: scheduler and timers
+The 8 MHz HSI feeds the PLL through `/2 × 16`. SYSCLK and HCLK are 64 MHz. APB1 runs at 32 MHz and supplies TIM2 at 64 MHz through the timer clock multiplier. Prescaler 7999 and ARR 79 produce a nominal 100 Hz update rate. Startup checks the configured division against the 10 ms scheduler tick. TIM2's application callback calls only `SCH_Update`. SysTick supplies the independent HAL millisecond clock.
 
-SCH_Init/Add_Task/Delete_Task/Update/Dispatch_Tasks initialize, register, cancel,
-advance and dispatch work. Delay/period use ticks; delay >= 1; period zero is
-one-shot. Reject NULL callbacks/outputs. Return APP_NO_CAPACITY on exhaustion,
-APP_NOT_FOUND for invalid handles. Output handles are valid only on success.
+| Foreground callback | Period | Responsibility |
+| --- | --- | --- |
+| `button_task` | 10 ms | Debounce enabled inputs and queue logical events |
+| `fsm_mode_task` | 10 ms | Consume one event and dispatch the active mode |
+| `dht20_task` | 10 ms | Advance sensor initialization, acquisition, or recovery |
+| `lcd_task` | 10 ms | Advance display initialization or a line transfer |
+| `lcd_display_task` | 100 ms | Format snapshots and submit changed rows |
+| `app_retry_sensor` | 5 s | Restart the sensor after its retry budget is exhausted |
 
-Implement a relative-delay queue. Update touches only its head and bounded
-readiness bookkeeping, even for simultaneous expirations; never scan tasks or
-execute callbacks in the ISR. Foreground dispatch processes ready zero-delay
-successors. Insert/delete preserve relative deadlines. Agree capacity, handle
-reuse, atomic access, overflow, delayed-dispatch accounting, periodic phase and
-callback add/delete semantics before implementation.
+`SCH_Update` increments a 64-bit tick counter in constant time. The foreground snapshots it with PRIMASK saved and restored. `SCH_Dispatch_Tasks` services a relative-delay queue in stable order for equal deadlines. Registration requires a positive initial delay. A zero period makes a task one-shot. Missed periodic callbacks coalesce while the next deadline stays on the original cadence. Software timers use the elapsed scheduler ticks. A late Automatic callback starts the next phase at dispatch and gives it its full duration.
 
-software_timer_init/start/cancel/is_expired/tick provide one-shot timers; expiry
-is sticky until cancellation. Cancel expired handles before reusing capacity.
-Start rejects zero duration and NULL output. Invalid handles return APP_NOT_FOUND.
-Tick is scheduled in foreground, not a second ISR time source. Agree timer tick,
-capacity, rounding and missed-tick accounting with scheduler integration.
+## Input and output boundaries
 
-## B/C: drivers
+The FSMs consume logical button events and use the traffic driver without HAL or pin dependencies. The [FSM design](fsm-mode-design.md) describes event routing, mode transitions, tuning limits, and the explicit All-Red phase.
 
-button_init/task/take_event produce debounced logical press/release events.
-fsm_mode_task is the sole foreground event consumer and forwards each event once
-to the active FSM. Sampling/debounce, queue size/overflow and button mapping are
-unresolved. IDs have no assigned application actions.
+The traffic driver validates each requested pair before writing GPIO. It rejects dual Green, removes an outgoing Green before enabling Green on the other road, and routes a two-bit decoder change through a non-Green code. Physical reset bias and lamp transitions are bench acceptance checks.
 
-traffic_light_init/apply are the sole traffic output interface. Init must establish
-verified safe outputs before APP_OK. Apply validates the complete pair and rejects
-invalid colors or dual green without writes. Safe physical sequencing must remove
-green before asserting another green. Error recovery and transition output policy
-need agreement. Shared types do not enforce safety; B must implement and verify it.
+## Shared I2C and display
 
-lcd_init/request_line/task copy bounded text and perform bounded transfer steps.
-dht20_init/task/get_sample expose nonblocking measurement steps and copied samples
-with explicit units. All pointer-taking status APIs reject NULL with
-APP_INVALID_ARGUMENT. void FSM event handlers ignore NULL. Initialization is boot
-work; timed device startup must progress via scheduled steps/APP_NOT_READY.
-Agree I2C ownership, addresses, dimensions, text capacity, freshness, invalidation,
-timeouts and transfer bounds. No hardware configuration has been invented.
+I2C1 is remapped to PB8/PB9 at 100 kHz. The event and error IRQs share a priority below TIM2. PA13/PA14 retain SWD while JTAG releases PB3/PB4.
 
-## Modes and shared state
+LCD and DHT20 share an `i2c_async_t` backend. Each accepted transfer has one owner and token. The STM32 adapter shifts 7-bit addresses at the HAL boundary, stages data privately, and copies RX data only after success. It offers a waiting client the next free slot for a bounded interval. Ownership retires after completion or after the adapter quiesces the peripheral on error or cancellation. A prolonged BUSY state or abort timeout reinitializes I2C1. A device holding the bus low may require isolation or power cycling.
 
-Each FSM exposes enter(config), exit(), on_button(event), task(). Entry copies
-validated configuration. task runs only for the active mode; behavior is pending.
-fsm_mode_init/request/get/task owns selection and routing. Register fsm_mode_task
-only for mode execution; it calls the active FSM task. Register driver/timer tasks
-separately as needed, avoiding duplicate execution.
+The optional LCD adapter targets a profiled HD44780-compatible panel with a PCF8574/A backpack. Transfers advance in bounded steps. Failure triggers a backoff, reinitialization, and repaint of the buffered rows. A two-row display shares its second row between timing in Tuning and the sensor reading elsewhere. Three or more rows permit dedicated timing and sensor rows. Peripheral failures leave traffic scheduling active.
 
-Agree transition ordering (exit, timer cancellation, safe output, entry), failure
-handling and event flushing before implementation. No boot mode is implied.
-Mode get returns APP_NOT_READY before initialization. Request acceptance versus
-transition completion remains unresolved. Timing configuration uses milliseconds;
-no defaults, allowed ranges or red/yellow/green relationships are assumed.
-Shared ownership must settle authoritative storage, validation and publication of
-tuned values. global.h contains types only, with no writable globals.
+### DHT20
 
-## Unresolved decisions
+The driver receives a clock and the shared transport through `dht20_configure`. It waits 500 ms at startup, then reads one status byte at address `0x38`. A ready sensor has busy bit 7 clear and both `0x18` bits set. If repair is needed, the driver sends `[register, 0, 0]` for each of `0x1B`, `0x1C`, and `0x1E`, waits at least 5 ms, reads three bytes, waits at least 10 ms, and restores the last two bytes with command `0xB0 | register`. It waits at least 10 ms after the final restore before checking status again. [Aosong DHT20 datasheet, V1.0](https://asairsensors.com/wp-content/uploads/2021/09/Data-Sheet-DHT20-Humidity-and-Temperature-Module-ASAIR-V1.0.03.pdf) · [Aosong reference program](https://www.aosong.com/userfiles/files/software/AHT20-21%20DEMO%20V1_3%281%29.rar)
 
-- Board identity: user says XNUCLEO-F103RB, README setup says NUCLEO-F103RB.
-- Pin map, polarities, clocks, TIM2 tick, I2C settings and device addresses.
-- Button count/IDs/actions, debounce/repeat and queue overflow policy.
-- Timing defaults/ranges/relations, per-road versus common durations, conversion.
-- Automatic phase sequence, Manual actions, Tuning commit/cancel behavior.
-- Boot mode, mode entry/exit, timer reset/resume, safe state and failure recovery.
-- Scheduler/timer capacities, concurrency, handle lifetime and overrun behavior.
-- LCD layout, DHT20 cadence/freshness/errors and bounded bus scheduling.
+At least 10 ms after initialization or publication, the driver can send `AC 33 00`. It releases the bus during the 80 ms minimum conversion interval, then reads seven bytes as a single frame. A busy response with valid CRC triggers another read within the conversion deadline. The parser checks an MSB-first CRC-8 over the first six bytes using polynomial `0x31` and initial value `0xFF`, then checks busy, OTP integrity (bit 4), and calibration (bit 3). The two packed 20-bit fields give `raw × 100 / 2^20` percent RH and `raw × 200 / 2^20 − 50` °C. The V1.3 specification documents bit 4, which the V1.0 table labels reserved. [Aosong DHT20 specification, V1.3](https://manuals.plus/m/6fb94a2f5bcc906a21ab17092318ce41f04d0b1bcdb237cbcf11e6dbf6c72dbb)
 
-Headers describe proposed signatures, not completed features. No runtime safety
-or firmware build is claimed by this scaffold.
+Application settings are a 2 s minimum measurement interval, a 100 ms limit each for bus acquisition and transfer completion, a 250 ms conversion deadline, and a 5 s freshness threshold. The driver allows two retries with a 2 s backoff. If the retry budget is exhausted, it reports unavailable and the five-second supervisor can restart it. Failed frames preserve the last good sample and its reception timestamp. Age runs from the observed completion of the successful receive, accumulates across clock wrap, and saturates at `UINT32_MAX`. Once stale, the reading stays stale until a valid frame arrives.
