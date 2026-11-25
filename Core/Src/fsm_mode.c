@@ -28,17 +28,41 @@ static bool fsm_mode_destination(app_mode_t mode)
     return mode == APP_MODE_AUTOMATIC || mode == APP_MODE_MANUAL;
 }
 
+static bool fsm_mode_adjustment_binding(const fsm_mode_binding_t *binding)
+{
+    return binding->kind == FSM_MODE_TUNING_ACTION
+        && (binding->button == BUTTON_ID_3 || binding->button == BUTTON_ID_4)
+        && (binding->action == FSM_TUNING_INCREASE || binding->action == FSM_TUNING_DECREASE);
+}
+
 static bool fsm_mode_binding_valid(app_mode_t source, const fsm_mode_binding_t *binding)
 {
     return binding->button < BUTTON_ID_COUNT
         && (source != APP_MODE_MANUAL || binding->button != BUTTON_ID_2)
         && (binding->trigger == BUTTON_EVENT_PRESS
             || ((binding->button == BUTTON_ID_2 || binding->button == BUTTON_ID_USER)
-                && (binding->trigger == BUTTON_EVENT_SHORT || binding->trigger == BUTTON_EVENT_LONG)))
+                && (binding->trigger == BUTTON_EVENT_SHORT || binding->trigger == BUTTON_EVENT_LONG))
+            || (binding->trigger == BUTTON_EVENT_REPEAT && fsm_mode_adjustment_binding(binding)))
         && ((binding->kind == FSM_MODE_SWITCH && fsm_mode_valid(binding->mode)
              && binding->mode != source)
             || (binding->kind == FSM_MODE_TUNING_ACTION && source == APP_MODE_TUNING
                 && (unsigned)binding->action < FSM_TUNING_ACTION_COUNT));
+}
+
+static bool fsm_mode_conflicting_bindings(const fsm_mode_binding_t *first,
+                                          const fsm_mode_binding_t *second)
+{
+    if (second->kind == FSM_MODE_UNBOUND || first->button != second->button) {
+        return false;
+    }
+    if (first->trigger == second->trigger) {
+        return true;
+    }
+    if (fsm_mode_adjustment_binding(first) && fsm_mode_adjustment_binding(second)
+        && first->action == second->action) {
+        return false;
+    }
+    return first->trigger == BUTTON_EVENT_PRESS || second->trigger == BUTTON_EVENT_PRESS;
 }
 
 app_status_t fsm_mode_configure(const fsm_mode_config_t *config)
@@ -61,10 +85,7 @@ app_status_t fsm_mode_configure(const fsm_mode_config_t *config)
                 return APP_INVALID_ARGUMENT;
             }
             for (size_t j = 0; j < i; ++j) {
-                if (bindings[j].kind != FSM_MODE_UNBOUND && bindings[i].button == bindings[j].button
-                    && (bindings[i].trigger == bindings[j].trigger
-                        || bindings[i].trigger == BUTTON_EVENT_PRESS
-                        || bindings[j].trigger == BUTTON_EVENT_PRESS)) {
+                if (fsm_mode_conflicting_bindings(&bindings[i], &bindings[j])) {
                     return APP_INVALID_ARGUMENT;
                 }
             }

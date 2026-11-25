@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
+#include "fsm_automatic.h"
 #include "fsm_mode.h"
 #include "fsm_manual.h"
 #include "software_timer.h"
@@ -8,7 +9,7 @@
 
 enum { ROAD_1 = (1U << 3) | (1U << 5), ROAD_2 = (1U << 4) | (1U << 10),
        ALL_RED = (1U << 5) | (1U << 10), P1 = (1U << 5) | ROAD_2,
-       P2 = (1U << 5) | (1U << 4) };
+       P2 = (1U << 5) | (1U << 4), P3 = ROAD_1 | (1U << 10) };
 
 static uint16_t pins;
 static uint32_t now_ms;
@@ -33,10 +34,10 @@ static uint32_t clock_ms(void)
 
 static app_status_t snapshot(traffic_state_t *phase)
 {
-    assert(pins == P2);
     if (snapshot_called) {
         return APP_NOT_READY;
     }
+    assert(pins == P2);
     snapshot_called = true;
     *phase = (traffic_state_t){TRAFFIC_RED, TRAFFIC_YELLOW};
     return APP_OK;
@@ -97,7 +98,7 @@ int main(void)
         }
     };
     const timing_config_t initial = {150, 50, 100};
-    const timing_config_t invalid = {151, 50, 100};
+    const timing_config_t invalid = {152, 51, 101};
     app_mode_t mode;
     traffic_state_t phase;
     assert(fsm_mode_get(NULL) == APP_INVALID_ARGUMENT);
@@ -107,7 +108,10 @@ int main(void)
     cfg.bindings[APP_MODE_TUNING][3] = (fsm_mode_binding_t){
         FSM_MODE_TUNING_ACTION, BUTTON_ID_USER, BUTTON_EVENT_PRESS, 0, FSM_TUNING_NEXT};
     assert(fsm_mode_configure(&cfg) == APP_INVALID_ARGUMENT);
-    cfg.bindings[APP_MODE_TUNING][3].kind = FSM_MODE_UNBOUND;
+    cfg.bindings[APP_MODE_TUNING][3] = (fsm_mode_binding_t){
+        FSM_MODE_TUNING_ACTION, BUTTON_ID_3, BUTTON_EVENT_REPEAT, 0, FSM_TUNING_DECREASE};
+    assert(fsm_mode_configure(&cfg) == APP_INVALID_ARGUMENT);
+    cfg.bindings[APP_MODE_TUNING][3].action = FSM_TUNING_INCREASE;
     assert(fsm_mode_configure(&cfg) == APP_OK);
     assert(fsm_mode_init(APP_MODE_AUTOMATIC, &invalid) == APP_INVALID_ARGUMENT);
     assert(fsm_mode_init(APP_MODE_AUTOMATIC, &initial) == APP_NOT_READY);
@@ -119,6 +123,14 @@ int main(void)
     assert(traffic_light_bind_io(write_gpio) == APP_OK);
     assert(traffic_light_init() == APP_OK);
     software_timer_init();
+    assert(fsm_automatic_enter(&invalid) == APP_INVALID_ARGUMENT && pins == ALL_RED);
+    assert(fsm_automatic_enter(&initial) == APP_OK);
+    for (unsigned i = 0; i < 15U; ++i) {
+        software_timer_tick();
+        fsm_automatic_task();
+    }
+    assert(pins == P3); /* Equal rounded durations skip the clearance phase. */
+    fsm_automatic_exit();
     assert(fsm_mode_request(APP_MODE_AUTOMATIC) == APP_OK);
     assert(fsm_mode_init(APP_MODE_AUTOMATIC, &initial) == APP_BUSY);
     assert(fsm_mode_request((app_mode_t)99) == APP_INVALID_ARGUMENT);
@@ -147,21 +159,29 @@ int main(void)
     press(BUTTON_ID_USER, 160);
     expect_mode(APP_MODE_TUNING);
     assert(pins == ALL_RED);
-    press(BUTTON_ID_3, 60); /* PRESS + REPEAT => only one edit */
+    press(BUTTON_ID_3, 60); /* Initial press plus one repeat. */
     fsm_tuning_view_t view;
-    assert(fsm_tuning_get(&view) == APP_OK && view.draft.green_ms == 110);
+    assert(fsm_tuning_get(&view) == APP_OK && view.draft.red_ms == 170
+        && view.draft.green_ms == 100);
     press(BUTTON_ID_USER, 160);
     expect_mode(APP_MODE_MANUAL);
     assert(pins == ALL_RED);
     assert(fsm_mode_request(APP_MODE_TUNING) == APP_OK);
-    assert(fsm_tuning_get(&view) == APP_OK && view.draft.green_ms == 100);
+    assert(fsm_tuning_get(&view) == APP_OK && view.draft.red_ms == 150);
+    press(BUTTON_ID_3, 4);
     press(BUTTON_ID_3, 4);
     press(BUTTON_ID_USER, 4);
     expect_mode(APP_MODE_AUTOMATIC);
-    ticks(10);
+    ticks(9);
     assert(pins == P1);
     ticks(1);
     assert(pins == P2);
+    ticks(5);
+    assert(pins == ALL_RED);
+    ticks(1);
+    assert(pins == ALL_RED);
+    ticks(1);
+    assert(pins == P3); /* Confirmed Red=170 ms gives exactly two clearance ticks. */
 
     assert(fsm_mode_request(APP_MODE_TUNING) == APP_OK);
     software_timer_id_t ids[32];
@@ -177,11 +197,21 @@ int main(void)
     assert(fsm_mode_last_status() == APP_NO_CAPACITY && pins == ALL_RED);
     assert(software_timer_cancel(ids[0]) == APP_OK);
     assert(fsm_mode_request(APP_MODE_AUTOMATIC) == APP_OK);
-    ticks(11);
-    assert(pins == P2); /* Failed confirmation did not publish 120 ms. */
+    ticks(17);
+    assert(pins == P3); /* Failed confirmation did not publish Red=180 ms. */
+
+    /* Invalidate the live phase timer. Automatic stops safely and task
+     * remains idle. Mode can recover through an explicit handoff. */
+    software_timer_init();
+    fsm_mode_task();
+    assert(pins == ALL_RED);
+    ticks(20);
+    assert(pins == ALL_RED);
+    expect_mode(APP_MODE_AUTOMATIC);
     assert(fsm_mode_request(APP_MODE_MANUAL) == APP_OK);
     expect_mode(APP_MODE_MANUAL);
     assert(pins == ALL_RED); /* Unavailable snapshot falls back safely. */
+    assert(fsm_mode_request(APP_MODE_AUTOMATIC) == APP_OK && pins == P1);
     puts("Mode integration tests passed");
     return 0;
 }

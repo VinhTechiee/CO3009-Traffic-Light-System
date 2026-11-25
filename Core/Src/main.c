@@ -22,12 +22,18 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "button.h"
-#include "fsm_mode.h"
-#include "scheduler.h"
-#include "software_timer.h"
-#include "traffic_light.h"
 #include <stddef.h>
+#include "board_profile.h"
+#include "scheduler.h"
+#include "timing_rules.h"
+#ifdef CO3009_BOARD_DIAGNOSTIC
+#include "board_diagnostic.h"
+#else
+#include "app_runtime.h"
+#include "i2c_stm32.h"
+#include "lcd_pcf8574.h"
+#include "traffic_light.h"
+#endif
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,13 +43,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* Set a bit for each button measured low when pressed. The default runs Auto with button input disabled. */
-#define CO3009_BUTTON_MASK_UNVERIFIED 0xFFU
-#ifndef CO3009_BUTTON_ACTIVE_LOW_MASK
-#define CO3009_BUTTON_ACTIVE_LOW_MASK CO3009_BUTTON_MASK_UNVERIFIED
-#endif
-_Static_assert(CO3009_BUTTON_ACTIVE_LOW_MASK == CO3009_BUTTON_MASK_UNVERIFIED
-    || (unsigned)CO3009_BUTTON_ACTIVE_LOW_MASK <= BUTTON_MASK_ALL, "Invalid button polarity mask");
+enum { CO3009_SCHEDULER_TICK_MS = 10U };
+_Static_assert(CO3009_SCHEDULER_TICK_MS == FSM_AUTOMATIC_TICK_MS,
+               "Automatic tick must match TIM2");
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -59,7 +61,12 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+static HAL_StatusTypeDef co3009_i2c_init_status;
+#ifndef CO3009_BOARD_DIAGNOSTIC
+static i2c_stm32_t co3009_i2c;
+static lcd_pcf8574_t co3009_lcd;
+static app_runtime_services_t co3009_services;
+#endif
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,60 +81,6 @@ static void MX_TIM2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-enum {
-  CO3009_TICK_MS = 10U,
-  CO3009_DEMO_GREEN_MS = 3000U,
-  CO3009_DEMO_YELLOW_MS = 2000U,
-  CO3009_MIN_COLOR_MS = 1000U,
-  CO3009_MAX_GREEN_MS = 30000U,
-  CO3009_MAX_YELLOW_MS = 10000U,
-  CO3009_TUNING_STEP_MS = 1000U
-};
-
-/* Tuning currently requires RED = GREEN + YELLOW. Use that common subset
- * even though Automatic also supports a positive all-red clearance. */
-static const timing_config_t co3009_initial_timing = {
-  .red_ms = CO3009_DEMO_GREEN_MS + CO3009_DEMO_YELLOW_MS,
-  .yellow_ms = CO3009_DEMO_YELLOW_MS,
-  .green_ms = CO3009_DEMO_GREEN_MS
-};
-
-static bool co3009_decode_light(uint32_t outputs, uint16_t pin_a, uint16_t pin_b,
-                                traffic_color_t *color)
-{
-  const bool a_high = (outputs & pin_a) != 0U;
-  const bool b_high = (outputs & pin_b) != 0U;
-
-  if (a_high) {
-    *color = b_high ? TRAFFIC_GREEN : TRAFFIC_YELLOW;
-  } else if (b_high) {
-    *color = TRAFFIC_RED;
-  } else {
-    return false;
-  }
-  return true;
-}
-
-static app_status_t co3009_get_automatic_phase(traffic_state_t *phase)
-{
-  traffic_state_t snapshot;
-
-  if (phase == NULL) {
-    return APP_INVALID_ARGUMENT;
-  }
-
-  /* Both roads share GPIOB. Read one snapshot of the output latch before
-   * fsm_mode exits Auto and changes the lights to all-red. */
-  const uint32_t outputs = GPIOB->ODR;
-  if (!co3009_decode_light(outputs, TL1_A_Pin, TL1_B_Pin, &snapshot.road_1)
-      || !co3009_decode_light(outputs, TL2_A_Pin, TL2_B_Pin, &snapshot.road_2)
-      || (snapshot.road_1 == TRAFFIC_GREEN && snapshot.road_2 == TRAFFIC_GREEN)) {
-    return APP_IO_ERROR;
-  }
-  *phase = snapshot;
-  return APP_OK;
-}
-
 static bool co3009_tim2_tick_matches(void)
 {
   RCC_ClkInitTypeDef clocks = {0};
@@ -141,104 +94,51 @@ static bool co3009_tim2_tick_matches(void)
 
   const uint64_t timer_counts =
       ((uint64_t)htim2.Init.Prescaler + 1U) * ((uint64_t)htim2.Init.Period + 1U);
-  return timer_hz != 0U && timer_counts * 1000U == timer_hz * CO3009_TICK_MS;
+  return timer_hz != 0U && timer_counts * 1000U == timer_hz * CO3009_SCHEDULER_TICK_MS;
 }
 
-static const fsm_mode_config_t co3009_mode_config = {
-  .timing = {
-    .red = {2U * CO3009_MIN_COLOR_MS, CO3009_MAX_GREEN_MS + CO3009_MAX_YELLOW_MS},
-    .green = {CO3009_MIN_COLOR_MS, CO3009_MAX_GREEN_MS},
-    .yellow = {CO3009_MIN_COLOR_MS, CO3009_MAX_YELLOW_MS},
-    .step_ms = CO3009_TUNING_STEP_MS,
-    .red_adjusts = TRAFFIC_GREEN
-  },
-  .after_confirm = APP_MODE_AUTOMATIC,
-  .after_cancel = APP_MODE_AUTOMATIC,
-  .automatic_phase = co3009_get_automatic_phase,
-  .bindings = {
-    [APP_MODE_AUTOMATIC] = {
-      {.kind = FSM_MODE_SWITCH, .button = BUTTON_ID_1,
-       .trigger = BUTTON_EVENT_PRESS, .mode = APP_MODE_MANUAL}
-    },
-    [APP_MODE_MANUAL] = {
-      {.kind = FSM_MODE_SWITCH, .button = BUTTON_ID_1,
-       .trigger = BUTTON_EVENT_PRESS, .mode = APP_MODE_TUNING}
-    },
-    [APP_MODE_TUNING] = {
-      {.kind = FSM_MODE_SWITCH, .button = BUTTON_ID_1,
-       .trigger = BUTTON_EVENT_PRESS, .mode = APP_MODE_AUTOMATIC},
-      {.kind = FSM_MODE_TUNING_ACTION, .button = BUTTON_ID_2,
-       .trigger = BUTTON_EVENT_SHORT, .action = FSM_TUNING_NEXT},
-      {.kind = FSM_MODE_TUNING_ACTION, .button = BUTTON_ID_2,
-       .trigger = BUTTON_EVENT_LONG, .action = FSM_TUNING_CONFIRM},
-      {.kind = FSM_MODE_TUNING_ACTION, .button = BUTTON_ID_3,
-       .trigger = BUTTON_EVENT_PRESS, .action = FSM_TUNING_INCREASE},
-      {.kind = FSM_MODE_TUNING_ACTION, .button = BUTTON_ID_4,
-       .trigger = BUTTON_EVENT_PRESS, .action = FSM_TUNING_DECREASE}
-    }
-  }
-};
+#ifndef CO3009_BOARD_DIAGNOSTIC
+static uint32_t co3009_now_ms(void *context)
+{
+  (void)context;
+  return HAL_GetTick();
+}
+
+#if !CO3009_TRAFFIC_PROFILE_ENABLED
+static void co3009_discard_traffic_write(uint16_t pins, bool high)
+{
+  (void)pins;
+  (void)high;
+}
+#endif
 
 static app_status_t co3009_start_application(void)
 {
-  const bool buttons_enabled =
-      CO3009_BUTTON_ACTIVE_LOW_MASK != CO3009_BUTTON_MASK_UNVERIFIED;
-  const sch_task_fn_t tasks[] = {button_task, software_timer_tick, fsm_mode_task};
-  sch_task_id_t task_ids[sizeof tasks / sizeof tasks[0]];
-  size_t task_count = 0U;
-
-  app_status_t status = traffic_light_init();
-  if (status != APP_OK) {
-    return status;
+#if !CO3009_TRAFFIC_PROFILE_ENABLED
+  const app_status_t bind_status = traffic_light_bind_io(co3009_discard_traffic_write);
+  if (bind_status != APP_OK) {
+    return bind_status;
   }
+#endif
 
-  if (!co3009_tim2_tick_matches()) {
-    return APP_INVALID_ARGUMENT;
-  }
-
-  if (buttons_enabled) {
-    status = button_configure_active_low((uint8_t)CO3009_BUTTON_ACTIVE_LOW_MASK);
-    if (status != APP_OK) {
-      return status;
-    }
-    status = button_init();
-    if (status != APP_OK) {
-      return status;
+  i2c_async_t bus;
+  lcd_config_t lcd;
+  app_runtime_config_t config = {
+    .buttons_enabled = CO3009_BUTTON_ACTIVE_LOW_MASK != CO3009_BUTTON_MASK_UNVERIFIED,
+    .button_active_low_mask = CO3009_BUTTON_ACTIVE_LOW_MASK,
+    .clock_ms = co3009_now_ms
+  };
+  if (co3009_i2c_init_status == HAL_OK && i2c_stm32_init(&co3009_i2c, &hi2c1, &bus) == APP_OK) {
+    config.bus = &bus;
+    const lcd_pcf8574_profile_t *profile = board_profile_lcd();
+    if (profile != NULL
+        && lcd_pcf8574_configure(&co3009_lcd, &bus, profile, co3009_now_ms, NULL, &lcd) == APP_OK) {
+      config.lcd = &lcd;
     }
   }
-
-  SCH_Init();
-  software_timer_init();
-  status = fsm_mode_configure(&co3009_mode_config);
-  if (status != APP_OK) {
-    return status;
-  }
-
-  /* All these foreground callbacks run once per 10 ms TIM2 tick. */
-  for (size_t i = buttons_enabled ? 0U : 1U; i < sizeof tasks / sizeof tasks[0]; ++i) {
-    status = SCH_Add_Task(tasks[i], 1U, 1U, &task_ids[task_count]);
-    if (status != APP_OK) {
-      break;
-    }
-    ++task_count;
-  }
-  if (status == APP_OK) {
-    status = fsm_mode_init(APP_MODE_AUTOMATIC, &co3009_initial_timing);
-  }
-  if (status == APP_OK) {
-    __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
-    if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK) {
-      status = APP_IO_ERROR;
-    }
-  }
-  if (status != APP_OK) {
-    while (task_count > 0U) {
-      --task_count;
-      (void)SCH_Delete_Task(task_ids[task_count]);
-    }
-  }
-  return status;
+  return app_runtime_start(&config, &co3009_services);
 }
+#endif
 /* USER CODE END 0 */
 
 /**
@@ -273,9 +173,30 @@ int main(void)
   MX_I2C1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
+  if (!co3009_tim2_tick_matches()) {
+    Error_Handler();
+  }
+
+#ifdef CO3009_BOARD_DIAGNOSTIC
+  if (board_diagnostic_start(co3009_i2c_init_status == HAL_OK ? &hi2c1 : NULL) != APP_OK) {
+    Error_Handler();
+  }
+#else
+  board_profile_prepare_traffic_gpio();
   if (co3009_start_application() != APP_OK) {
     const traffic_state_t safe = {TRAFFIC_RED, TRAFFIC_RED};
     (void)traffic_light_apply(&safe);
+    Error_Handler();
+  }
+#endif
+
+  __HAL_TIM_SET_COUNTER(&htim2, 0U);
+  __HAL_TIM_CLEAR_FLAG(&htim2, TIM_FLAG_UPDATE);
+  if (HAL_TIM_Base_Start_IT(&htim2) != HAL_OK) {
+#ifndef CO3009_BOARD_DIAGNOSTIC
+    const traffic_state_t safe = {TRAFFIC_RED, TRAFFIC_RED};
+    (void)traffic_light_apply(&safe);
+#endif
     Error_Handler();
   }
   /* USER CODE END 2 */
@@ -353,12 +274,8 @@ static void MX_I2C1_Init(void)
   hi2c1.Init.OwnAddress2 = 0;
   hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
   hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN I2C1_Init 2 */
-
+  co3009_i2c_init_status = HAL_I2C_Init(&hi2c1);
   /* USER CODE END I2C1_Init 2 */
 
 }
@@ -460,9 +377,6 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(LED_Debug_A_GPIO_Port, LED_Debug_A_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, TL2_B_Pin|TL1_A_Pin|TL2_A_Pin|TL1_B_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(LED_Debug_B_GPIO_Port, LED_Debug_B_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : BTN_USER_Pin BTN_3_Pin */
@@ -480,9 +394,8 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pins : TL2_B_Pin TL1_A_Pin TL2_A_Pin TL1_B_Pin */
   GPIO_InitStruct.Pin = TL2_B_Pin|TL1_A_Pin|TL2_A_Pin|TL1_B_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LED_Debug_B_Pin */
@@ -513,6 +426,27 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     SCH_Update();
   }
 }
+#ifndef CO3009_BOARD_DIAGNOSTIC
+void HAL_I2C_MasterTxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+  i2c_stm32_notify(&co3009_i2c, hi2c, I2C_STM32_TX_COMPLETE);
+}
+
+void HAL_I2C_MasterRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+  i2c_stm32_notify(&co3009_i2c, hi2c, I2C_STM32_RX_COMPLETE);
+}
+
+void HAL_I2C_ErrorCallback(I2C_HandleTypeDef *hi2c)
+{
+  i2c_stm32_notify(&co3009_i2c, hi2c, I2C_STM32_ERROR);
+}
+
+void HAL_I2C_AbortCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+  i2c_stm32_notify(&co3009_i2c, hi2c, I2C_STM32_ABORT_COMPLETE);
+}
+#endif
 /* USER CODE END 4 */
 
 /**

@@ -1,20 +1,11 @@
 #include "fsm_automatic.h"
 
 #include "software_timer.h"
+#include "timing_rules.h"
 #include "traffic_light.h"
 
 #include <stddef.h>
 #include <stdint.h>
-
-/* Course project TIM2/Scheduler tick: 10 ms. Override only if the group
- * changes the common tick and updates every module consistently. */
-#ifndef FSM_AUTOMATIC_TICK_MS
-#define FSM_AUTOMATIC_TICK_MS 10U
-#endif
-
-#if (FSM_AUTOMATIC_TICK_MS == 0U)
-#error "FSM_AUTOMATIC_TICK_MS must be greater than zero"
-#endif
 
 typedef enum
 {
@@ -27,50 +18,27 @@ typedef enum
 
 static uint8_t g_active;
 static automatic_phase_t g_phase;
-static timing_config_t g_timing;
+static traffic_state_t g_applied_phase;
+static uint32_t g_green_ticks;
+static uint32_t g_yellow_ticks;
 static uint32_t g_clearance_ticks;
 static software_timer_id_t g_phase_timer_id;
 
 static app_status_t apply_traffic_pair(traffic_color_t road1,
                                        traffic_color_t road2)
 {
-    traffic_state_t state;
-
-    state.road_1 = road1;
-    state.road_2 = road2;
-    return traffic_light_apply(&state);
+    const traffic_state_t state = {road1, road2};
+    const app_status_t status = traffic_light_apply(&state);
+    if (status == APP_OK)
+    {
+        g_applied_phase = state;
+    }
+    return status;
 }
 
 static app_status_t apply_all_red(void)
 {
-    app_status_t status = apply_traffic_pair(TRAFFIC_RED, TRAFFIC_RED);
-
-    return status;
-}
-
-/* Convert milliseconds to scheduler ticks without shortening the requested
- * duration. The common scheduler tick is 10 ms in this project. */
-static uint8_t milliseconds_to_ticks(uint32_t milliseconds,
-                                     uint32_t *ticks_out)
-{
-    uint64_t ticks;
-
-    if ((milliseconds == 0U) || (ticks_out == NULL))
-    {
-        return 0U;
-    }
-
-    ticks = ((uint64_t)milliseconds +
-             ((uint64_t)FSM_AUTOMATIC_TICK_MS - 1U)) /
-            (uint64_t)FSM_AUTOMATIC_TICK_MS;
-
-    if ((ticks == 0U) || (ticks > UINT32_MAX))
-    {
-        return 0U;
-    }
-
-    *ticks_out = (uint32_t)ticks;
-    return 1U;
+    return apply_traffic_pair(TRAFFIC_RED, TRAFFIC_RED);
 }
 
 /* Start one phase. Timer is allocated first; if the output driver rejects
@@ -87,19 +55,13 @@ static app_status_t start_phase(automatic_phase_t phase)
     switch (phase)
     {
         case AUTO_PHASE_ROAD1_RED_ROAD2_GREEN:
-            if (milliseconds_to_ticks(g_timing.green_ms, &duration_ticks) == 0U)
-            {
-                return APP_INVALID_ARGUMENT;
-            }
+            duration_ticks = g_green_ticks;
             road1 = TRAFFIC_RED;
             road2 = TRAFFIC_GREEN;
             break;
 
         case AUTO_PHASE_ROAD1_RED_ROAD2_YELLOW:
-            if (milliseconds_to_ticks(g_timing.yellow_ms, &duration_ticks) == 0U)
-            {
-                return APP_INVALID_ARGUMENT;
-            }
+            duration_ticks = g_yellow_ticks;
             road1 = TRAFFIC_RED;
             road2 = TRAFFIC_YELLOW;
             break;
@@ -111,19 +73,13 @@ static app_status_t start_phase(automatic_phase_t phase)
             break;
 
         case AUTO_PHASE_ROAD1_GREEN_ROAD2_RED:
-            if (milliseconds_to_ticks(g_timing.green_ms, &duration_ticks) == 0U)
-            {
-                return APP_INVALID_ARGUMENT;
-            }
+            duration_ticks = g_green_ticks;
             road1 = TRAFFIC_GREEN;
             road2 = TRAFFIC_RED;
             break;
 
         case AUTO_PHASE_ROAD1_YELLOW_ROAD2_RED:
-            if (milliseconds_to_ticks(g_timing.yellow_ms, &duration_ticks) == 0U)
-            {
-                return APP_INVALID_ARGUMENT;
-            }
+            duration_ticks = g_yellow_ticks;
             road1 = TRAFFIC_YELLOW;
             road2 = TRAFFIC_RED;
             break;
@@ -184,13 +140,6 @@ static void stop_safely(void)
  * to 10 ms ticks, and validation also checks the quantized tick relationship. */
 app_status_t fsm_automatic_enter(const timing_config_t *config)
 {
-    uint32_t red_ticks;
-    uint32_t green_ticks;
-    uint32_t yellow_ticks;
-    uint64_t minimum_red_ms;
-    uint64_t minimum_red_ticks;
-    timing_config_t previous_timing;
-    uint32_t previous_clearance_ticks;
     app_status_t status;
 
     if (config == NULL)
@@ -201,32 +150,8 @@ app_status_t fsm_automatic_enter(const timing_config_t *config)
     {
         return APP_BUSY;
     }
-    if ((config->red_ms == 0U) ||
-        (config->yellow_ms == 0U) ||
-        (config->green_ms == 0U))
+    if (!timing_config_valid(config))
     {
-        return APP_INVALID_ARGUMENT;
-    }
-
-    minimum_red_ms = (uint64_t)config->green_ms +
-                     (uint64_t)config->yellow_ms;
-    if ((uint64_t)config->red_ms < minimum_red_ms)
-    {
-        return APP_INVALID_ARGUMENT;
-    }
-
-    if ((milliseconds_to_ticks(config->red_ms, &red_ticks) == 0U) ||
-        (milliseconds_to_ticks(config->green_ms, &green_ticks) == 0U) ||
-        (milliseconds_to_ticks(config->yellow_ms, &yellow_ticks) == 0U))
-    {
-        return APP_INVALID_ARGUMENT;
-    }
-
-    minimum_red_ticks = (uint64_t)green_ticks + (uint64_t)yellow_ticks;
-    if ((uint64_t)red_ticks < minimum_red_ticks)
-    {
-        /* Independent upward rounding can make the tick-level phases exceed
-         * RED. Reject rather than silently produce a shorter RED interval. */
         return APP_INVALID_ARGUMENT;
     }
 
@@ -238,17 +163,13 @@ app_status_t fsm_automatic_enter(const timing_config_t *config)
         return status;
     }
 
-    previous_timing = g_timing;
-    previous_clearance_ticks = g_clearance_ticks;
-    g_timing = *config; /* Private copy required by the public header contract. */
-    g_clearance_ticks = red_ticks - green_ticks - yellow_ticks;
-    g_phase_timer_id = 0U;
+    g_green_ticks = timing_ticks_ceil(config->green_ms);
+    g_yellow_ticks = timing_ticks_ceil(config->yellow_ms);
+    g_clearance_ticks = timing_ticks_ceil(config->red_ms) - g_green_ticks - g_yellow_ticks;
 
     status = start_phase(AUTO_PHASE_ROAD1_RED_ROAD2_GREEN);
     if (status != APP_OK)
     {
-        g_timing = previous_timing;
-        g_clearance_ticks = previous_clearance_ticks;
         stop_safely();
         return status;
     }
@@ -262,14 +183,21 @@ app_status_t fsm_automatic_enter(const timing_config_t *config)
  * the Auto phase timer and requests both roads RED before handover. */
 void fsm_automatic_exit(void)
 {
-    if (g_phase_timer_id != 0U)
-    {
-        (void)software_timer_cancel(g_phase_timer_id);
-    }
+    stop_safely();
+}
 
-    g_phase_timer_id = 0U;
-    g_active = 0U;
-    (void)apply_all_red();
+app_status_t fsm_automatic_get_phase(traffic_state_t *phase)
+{
+    if (phase == NULL)
+    {
+        return APP_INVALID_ARGUMENT;
+    }
+    if (g_active == 0U)
+    {
+        return APP_NOT_READY;
+    }
+    *phase = g_applied_phase;
+    return APP_OK;
 }
 
 /* Button IDs/actions are intentionally not mapped here. global.h defines

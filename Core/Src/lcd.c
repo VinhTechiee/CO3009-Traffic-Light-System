@@ -126,7 +126,14 @@ void lcd_task(void)
         lcd.config.address_7bit, lcd.row, lcd.sending, lcd.config.columns);
     lcd.writing = status == APP_BUSY || status == APP_NOT_READY;
     if (!lcd.writing) {
-        if (status != APP_OK) {
+        if (status == APP_IO_ERROR) {
+            /* An interrupted command can leave the controller out of sync.
+             * Reinitialize and repaint all rows, since startup may clear them. */
+            lcd.prepared = false;
+            for (uint8_t row = 0U; row < lcd.config.rows; ++row) {
+                lcd.dirty[row] = true;
+            }
+        } else if (status != APP_OK) {
             lcd.dirty[lcd.row] = true;
         }
         lcd.row = (uint8_t)((lcd.row + 1U) % lcd.config.rows);

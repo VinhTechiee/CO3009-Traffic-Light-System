@@ -30,11 +30,11 @@ int main(void)
     view = act(FSM_TUNING_INCREASE, BUTTON_RELEASE);
     assert(view.draft.red_ms == 400);
     view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
-    assert(view.draft.red_ms == 500 && view.draft.green_ms == 400);
+    assert(view.draft.red_ms == 500 && view.draft.green_ms == 300);
     view = act(FSM_TUNING_NEXT, BUTTON_PRESS);
     assert(view.selected == TRAFFIC_GREEN);
     view = act(FSM_TUNING_DECREASE, BUTTON_PRESS);
-    assert(view.draft.green_ms == 300);
+    assert(view.draft.green_ms == 200 && view.draft.red_ms == 500);
     view = act(FSM_TUNING_SELECT_YELLOW, BUTTON_PRESS);
     assert(view.selected == TRAFFIC_YELLOW);
     view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
@@ -50,14 +50,44 @@ int main(void)
     assert(act(FSM_TUNING_DECREASE, BUTTON_PRESS).draft.red_ms == 400);
     fsm_tuning_exit();
 
+    /* A range-valid adjustment can still break the rounded tick relation. */
+    const fsm_tuning_policy_t fine = {{1, 100}, {1, 100}, {1, 100}, 1, TRAFFIC_RED};
+    const timing_config_t exact = {20, 10, 10};
+    const timing_config_t extra = {31, 10, 10};
+    const timing_config_t too_short_ms = {19, 10, 10};
+    const timing_config_t too_short_ticks = {22, 11, 11};
+    const timing_config_t extra_but_too_short_ticks = {30, 11, 11};
+    const timing_config_t rounded_ok = {31, 11, 11};
+    const timing_config_t out_of_range = {101, 10, 10};
+    const timing_config_t edit_boundary = {20, 9, 11};
+    assert(fsm_tuning_validate(&fine, &exact) == APP_OK);
+    assert(fsm_tuning_validate(&fine, &extra) == APP_OK);
+    assert(fsm_tuning_validate(&fine, &too_short_ms) == APP_INVALID_ARGUMENT);
+    assert(fsm_tuning_validate(&fine, &too_short_ticks) == APP_INVALID_ARGUMENT);
+    assert(fsm_tuning_validate(&fine, &extra_but_too_short_ticks) == APP_INVALID_ARGUMENT);
+    assert(fsm_tuning_validate(&fine, &rounded_ok) == APP_OK);
+    assert(fsm_tuning_validate(&fine, &out_of_range) == APP_INVALID_ARGUMENT);
+    const timing_config_t before_tick_failure = {.red_ms = 30, .green_ms = 10, .yellow_ms = 11};
+    assert(fsm_tuning_configure(&fine) == APP_OK);
+    assert(fsm_tuning_enter(&edit_boundary) == APP_INVALID_ARGUMENT);
+    assert(fsm_tuning_enter(&before_tick_failure) == APP_OK);
+    (void)act(FSM_TUNING_SELECT_GREEN, BUTTON_PRESS);
+    view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
+    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.green_ms == 10);
+    assert(act(FSM_TUNING_CONFIRM, BUTTON_PRESS).result == FSM_TUNING_CONFIRMED);
+    fsm_tuning_exit();
+
     policy = (fsm_tuning_policy_t){{1, UINT32_MAX}, {1, UINT32_MAX},
                                  {1, UINT32_MAX}, 1, TRAFFIC_YELLOW};
-    const timing_config_t maximum = {UINT32_MAX, UINT32_MAX - 1U, 1};
+    const timing_config_t maximum = {UINT32_MAX, UINT32_MAX - 5U, 1};
+    const timing_config_t sum_overflow = {UINT32_MAX, UINT32_MAX, 1};
+    assert(fsm_tuning_validate(&policy, &sum_overflow) == APP_INVALID_ARGUMENT);
     assert(fsm_tuning_configure(&policy) == APP_OK);
     assert(fsm_tuning_enter(&maximum) == APP_OK);
     view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
     assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.red_ms == UINT32_MAX);
-    assert(act(FSM_TUNING_DECREASE, BUTTON_PRESS).draft.yellow_ms == UINT32_MAX - 2U);
+    (void)act(FSM_TUNING_SELECT_YELLOW, BUTTON_PRESS);
+    assert(act(FSM_TUNING_DECREASE, BUTTON_PRESS).draft.yellow_ms == UINT32_MAX - 6U);
     puts("Tuning tests passed");
     return 0;
 }

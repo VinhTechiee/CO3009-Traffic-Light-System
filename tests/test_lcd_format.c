@@ -111,7 +111,7 @@ static void test_mode_and_bounds(void)
 static void test_timing_and_invalid_arguments(void)
 {
     char line[32];
-    timing_config_t config = {.red_ms = 1u, .green_ms = 5000u, .yellow_ms = 2750u};
+    timing_config_t config = {.red_ms = 8000u, .green_ms = 5000u, .yellow_ms = 2750u};
     const dht20_info_t invalid_info = {.sample_status = (dht20_sample_status_t)99};
 
     assert(lcd_format_timing(line, sizeof line, 16u, &config, TRAFFIC_GREEN) == APP_OK);
@@ -119,8 +119,9 @@ static void test_timing_and_invalid_arguments(void)
     assert(lcd_format_timing(line, sizeof line, 16u, &config, TRAFFIC_YELLOW) == APP_OK);
     assert(strcmp(line, "Yellow 2750 ms") == 0);
     assert(lcd_format_timing(line, sizeof line, 16u, &config, TRAFFIC_RED) == APP_OK);
-    assert(strcmp(line, "Red 7750 ms") == 0);
-    assert(config.red_ms == 1u);
+    assert(strcmp(line, "Red 8000 ms") == 0);
+    assert(config.red_ms == 8000u);
+    config.red_ms = UINT32_MAX;
     config.green_ms = UINT32_MAX - config.yellow_ms;
     assert(lcd_format_timing(line, sizeof line, 20u, &config, TRAFFIC_RED) == APP_OK);
     assert(strcmp(line, "Red 4294967295 ms") == 0);
@@ -149,7 +150,7 @@ static void test_timing_and_invalid_arguments(void)
 static void test_timing_buffer_bounds(void)
 {
     static const char expected[] = "Red 7750 ms";
-    const timing_config_t config = {.green_ms = 5000u, .yellow_ms = 2750u};
+    const timing_config_t config = {.red_ms = 7750u, .green_ms = 5000u, .yellow_ms = 2750u};
     char line[sizeof expected + 2u];
 
     memset(line, '!', sizeof line);
@@ -182,7 +183,7 @@ int main(void)
     test_mode_and_bounds();
     puts("PASS: mode labels, widths, and bounded truncation");
     test_timing_and_invalid_arguments();
-    puts("PASS: timing, derived Red, overflow, and invalid arguments");
+    puts("PASS: timing, independent Red, overflow, and invalid arguments");
     test_sensor_buffer_bounds();
     test_timing_buffer_bounds();
     puts("PASS: sensor and timing exact-fit buffers, truncation, and guard bytes");
