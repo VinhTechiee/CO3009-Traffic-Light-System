@@ -2,10 +2,10 @@
 
 ## Scope and architecture
 
-The driver is pure C99 and uses the existing protocol parser unchanged. It needs
-no HAL, scheduler, software timer, GPIO, allocation, sleep, or hardware bus manager.
-`i2c_async.h` is an injected transport contract only; no production backend is
-claimed. The fake backend exists exclusively in `tests/test_dht20_driver.c`.
+The driver is pure C99. It takes a clock and an `i2c_async.h` transport through
+its configuration. Firmware supplies the shared STM32 I2C1 backend in
+`Core/Src/i2c_stm32.c`. `tests/test_dht20_driver.c` exercises the driver with a
+fake transport.
 
 The original `dht20_init()`, `dht20_task()` and `dht20_get_sample()` signatures
 and `dht20_sample_t` fields are preserved. New configuration, stop and diagnostic
@@ -37,9 +37,9 @@ Verified on 2026-11-16:
    see [protocol references and status policy](dht20-protocol.md). Frame validity
    and conversions remain entirely in the approved parser.
 
-The demo's first `0x70`/`0x71` byte is address plus direction, not command
-payload. Status is a one-byte receive at public address `0x38`. There is no
-extra transmit of `0x71`. A future HAL adapter performs any HAL address shift.
+The demo's first `0x70`/`0x71` byte encodes the address and direction. Status is a
+one-byte receive at public address `0x38`. The STM32 adapter shifts the address
+at the HAL boundary.
 
 ## State machine and initialization
 
@@ -100,7 +100,7 @@ outlive driver use. Each accepted transfer returns a generation-safe token bound
 to the driver's stable owner identity. Tokens are opaque; zero is not assumed
 invalid. BUSY never transfers ownership and causes retry on a later invocation.
 
-The backend must serialize the actual bus across DHT20 and future LCD clients.
+The backend serializes DHT20 and LCD transactions on I2C1.
 The driver can own only one transaction; it never cancels by address, bus-wide
 reset, or another owner's token. TX data stays unchanged; RX is not touched
 until terminal completion. Driver storage remains alive for the program lifetime.
@@ -250,26 +250,20 @@ git diff --check
 Host evidence does not establish hardware transfer timing, WCET, electrical
 compatibility, bus reliability or board operation. No hardware validation claimed.
 
-## Integration for A, B and future LCD
+## Firmware integration
 
-Member B supplies a bounded STM32 adapter using interrupt/DMA transfers, never
-blocking HAL calls. Shift the public 7-bit address only at the HAL boundary.
-Serialize the shared peripheral; reject contention with BUSY; retain accepted
-buffer pointers; publish terminal completion/errors only after all access ends;
-check byte count; implement ownership/generation validation and asynchronous
-abort polling, including late interrupt races. Synchronize shared ISR state with
-appropriate short critical sections. No FSM or protocol code should know HAL.
-Verify the board, I2C peripheral configuration, pull-ups, actual sensor revision,
-bus-sharing electrical constraints, and recovery behavior on hardware. No pins,
-clocks, `.ioc`, bus reset or physical power-control behavior are invented here.
+The STM32 backend uses I2C1 event and error interrupts and stages transfer
+bytes in private storage. It matches owner and token on every poll or cancel,
+returns BUSY on contention, and copies received bytes to the driver only after
+successful completion. Abort or transfer error can reset and reinitialize I2C1.
+Continuously held-low bus lines require physical recovery.
 
-Member A registers only `dht20_task` once, e.g. every 10 ms, in foreground;
-no scheduler implementation is required by this driver. Provide a monotonic
-millisecond clock; a timestamp callback must return promptly and atomically.
-Handle configuration/init/registration failures. Do not call driver work from
-the tick ISR or create another software-timer time source for it.
+The application supplies a monotonic `HAL_GetTick()` clock and schedules
+`dht20_task` once per 10 ms in foreground. A sensor supervisor checks every
+five seconds and starts a new attempt after the driver's retry budget is
+exhausted. This allows sensor reconnection while traffic control keeps running.
+The optional LCD shares the backend, uses its own owner and transport buffer,
+and displays the sensor status and freshness.
 
-The future LCD should use the same backend with a different stable owner and
-its own persistent buffers/tokens, cooperate on BUSY, and display DHT20 readings
-according to freshness metadata. Shared bus contract adoption still needs team
-review at integration. No LCD/FSM/A/B source changes are made in this phase.
+The actual sensor revision, pull-ups, bus-sharing electrical constraints and
+recovery behavior require board verification.

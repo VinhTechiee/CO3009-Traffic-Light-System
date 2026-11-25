@@ -97,13 +97,12 @@ other measurement remains at its zero-raw baseline. These are synthetic project
 fixtures, not manufacturer test vectors. CRC bytes come from the independent
 polynomial long-division oracle.
 
-## Remaining integration
+## Firmware integration
 
 The cooperative driver now acquires seven coherent bytes through an injected
 asynchronous transport, handles startup/measurement/recovery, and publishes
 protocol-valid frames with their observed reception timestamp. Delayed valid
 frames publish as stale; invalid frames preserve last-good data. Reconfiguration
 preserves sample age. See [driver policy and integration](dht20-driver.md).
-The parser itself is unchanged and supplies no freshness or hardware behavior.
-B must still supply and validate the actual transport, board/I2C configuration
-and physical bus arrangement; no HAL or pin mapping is introduced here.
+The firmware uses the STM32 I2C1 backend for sensor transactions. Physical bus
+configuration and sensor response remain part of board validation.

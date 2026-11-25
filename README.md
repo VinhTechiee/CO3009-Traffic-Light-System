@@ -1,8 +1,38 @@
-# CO3009 - Phân công BTL (3 thành viên)
+# CO3009 Two-Road Traffic Light System
+
+Firmware for the XNUCLEO-F103RB carrier and STM32F103RB MCU. See [pre-board validation](docs/pre-board-validation.md) for software results and [the board checklist](docs/board-demo-checklist.md) for calibration and demonstration.
+
+## Build and test
+
+Install STM32CubeF1 V1.8.7 and put STM32CubeCLT's ARM GNU tools, CMake, and Ninja on PATH. CMake uses the SDK under `%USERPROFILE%/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7` by default. Set `-DSTM32CubeF1_ROOT=<absolute SDK path>` for another installation.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/run-c-host-tests.ps1
+cmake -S . -B build/firmware -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/firmware --clean-first
+```
+
+For the sanitizer run, use the host runner with `-WslSanitizers` and GCC with ASan/UBSan support in the default WSL distribution. CMake builds from the checked-in source, the vendor CMSIS startup and HAL, and the repository linker script. The application outputs are `build/firmware/co3009.elf`, `.hex`, `.bin`, and `.map`. The root-level HEX is an upstream historical upload.
+
+The default image leaves the traffic GPIO pins as inputs, ignores button input, and leaves the LCD disabled while Automatic logic and DHT20 acquisition run. Calibrate the board and pass your measured header using `-DCO3009_PROFILE_HEADER=<absolute header path>` to enable the verified hardware. Build the separate diagnostic image and flash the measured-profile application over SWD using [the board checklist](docs/board-demo-checklist.md). The `.ioc` is the pin and peripheral configuration reference. Use CMake for the integrated firmware build.
+
+## Operation
+
+| Mode | Button actions |
+| --- | --- |
+| Automatic | BTN1 enters Manual and passes the active lamp pair. |
+| Manual | BTN2 press advances one phase. BTN1 enters Tuning. |
+| Tuning | BTN2 tap selects Red → Green → Yellow → Red. BTN3 increases and BTN4 decreases the selected duration by 1 s. Hold either to repeat. Hold BTN2 to save, or tap BTN1 to cancel. Both actions restart Automatic. |
+
+Automatic starts at Road 1 Red and Road 2 Green. Defaults are Red 5 s, Green 3 s, and Yellow 2 s. Tuning accepts Red 2–40 s, Green 1–30 s, and Yellow 1–10 s. Red must cover Green plus Yellow. Any excess gives one timed all-red phase per complete cycle. Tuning stays all-red and saves in RAM until reset. Both roads use the same durations.
+
+The LCD dedicates one row to mode. A two-row display shares the remaining row between the selected duration in Tuning and sensor data in other modes. Three or more rows allow separate timing and sensor rows. See [architecture](docs/architecture.md) for the timing, tasks, and recovery behavior. The detailed course handout and shield schematic were unavailable for this integration, so the button actions and limits still need comparison with the official specification.
+
+## Phân công BTL (3 thành viên)
 
 **Đề tài:** Two-Road Traffic Light System - XNUCLEO-F103RB  
 **Deadline nộp báo cáo & source:** **04/12/2026** · **Demo:** tuần 15/16 (theo lịch thông báo)  
-**GitHub:** [điền link repo] · Mỗi người dùng tài khoản riêng, commit phần mình.
+**GitHub:** [CO3009-Traffic-Light-System](https://github.com/VinhTechiee/CO3009-Traffic-Light-System) · Mỗi người dùng tài khoản riêng, commit phần mình.
 
 ## 1. Phân công chính
 
@@ -42,11 +72,3 @@
 - Repo có README hướng dẫn build/flash/operate, đủ commit của 3 thành viên, tag cuối và báo cáo PDF theo template của môn.
 
 > **Cần đối chiếu:** tài liệu hướng dẫn còn dẫn tới `Project_Group.docx` (đặc tả chi tiết). Khi có file này, chốt lại mapping nút, ràng buộc thời gian và hành vi từng mode trước khi code cuối.
-
-## Scaffold status
-
-Public headers and intentionally unimplemented source shells are in `Core/Inc`
-and `Core/Src`. See [architecture and proposed contracts](docs/architecture.md),
-[integration checklist](docs/integration-checklist.md), and [team conventions](AGENTS.md).
-No CubeIDE project or `.ioc` is included yet; firmware build/flash is not validated.
-The detailed `Project_Group.docx` specification is not present in this repository.

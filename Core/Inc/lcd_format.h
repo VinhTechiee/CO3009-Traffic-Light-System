@@ -19,8 +19,7 @@ app_status_t lcd_format_sensor(char *output, size_t capacity, size_t width,
                                const dht20_info_t *info);
 app_status_t lcd_format_mode(char *output, size_t capacity, size_t width,
                              app_mode_t mode);
-/* Displays one duration in ms. Red is derived from positive Green and Yellow.
- * An unrepresentable sum is invalid. The stored red_ms field is ignored.
+/* Displays one stored duration in ms, including any clearance in red_ms.
  */
 app_status_t lcd_format_timing(char *output, size_t capacity, size_t width,
                                const timing_config_t *config, traffic_color_t color);

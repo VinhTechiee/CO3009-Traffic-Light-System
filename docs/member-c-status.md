@@ -1,5 +1,7 @@
 # Member C status and board integration
 
+This is the historical status at the Member C merge. The current firmware wiring and validation are in [architecture](architecture.md) and [pre-board validation](pre-board-validation.md).
+
 The local C branch was `feature/c-lcd-tuning` at `407dc01` before the implementation. The working tree was clean. The architecture scaffold notes predate the implementations in this checkout. The STM32F103RB `.ioc` is present. `Project_Group.docx`, generated application entry point, and LCD hardware adapter were absent.
 
 | Module | At inspection | Current evidence |
