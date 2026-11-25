@@ -17,6 +17,10 @@
 .vscode/
 # Local workspace only; retain .project/.cproject/.settings/.ioc
 .metadata/
+# Private checkout, notes and per-board calibration
+/CO3009-Traffic-Light-System/
+/.local/
+/firmware/profiles/*.local.h
 # Temporary files
 *~
 *.swp
