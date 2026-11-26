@@ -162,7 +162,7 @@ int main(void)
     press(BUTTON_ID_3, 60); /* Initial press plus one repeat. */
     fsm_tuning_view_t view;
     assert(fsm_tuning_get(&view) == APP_OK && view.draft.red_ms == 170
-        && view.draft.green_ms == 100);
+        && view.draft.green_ms == 120);
     press(BUTTON_ID_USER, 160);
     expect_mode(APP_MODE_MANUAL);
     assert(pins == ALL_RED);
@@ -172,16 +172,14 @@ int main(void)
     press(BUTTON_ID_3, 4);
     press(BUTTON_ID_USER, 4);
     expect_mode(APP_MODE_AUTOMATIC);
-    ticks(9);
+    ticks(11);
     assert(pins == P1);
     ticks(1);
     assert(pins == P2);
-    ticks(5);
-    assert(pins == ALL_RED);
+    ticks(4);
+    assert(pins == P2);
     ticks(1);
-    assert(pins == ALL_RED);
-    ticks(1);
-    assert(pins == P3); /* Confirmed Red=170 ms gives exactly two clearance ticks. */
+    assert(pins == P3); /* Paired edits preserve the initial zero clearance. */
 
     assert(fsm_mode_request(APP_MODE_TUNING) == APP_OK);
     software_timer_id_t ids[32];

@@ -200,6 +200,59 @@ app_status_t fsm_automatic_get_phase(traffic_state_t *phase)
     return APP_OK;
 }
 
+static uint32_t automatic_seconds_ceil(uint32_t ticks)
+{
+    const uint64_t milliseconds = (uint64_t)ticks * FSM_AUTOMATIC_TICK_MS;
+    return (uint32_t)((milliseconds + 999U) / 1000U);
+}
+
+app_status_t fsm_automatic_get_view(fsm_automatic_view_t *view)
+{
+    if (view == NULL)
+    {
+        return APP_INVALID_ARGUMENT;
+    }
+    if (g_active == 0U)
+    {
+        return APP_NOT_READY;
+    }
+
+    uint32_t phase_ticks;
+    const app_status_t status = software_timer_get_remaining(g_phase_timer_id, &phase_ticks);
+    if (status != APP_OK)
+    {
+        return status;
+    }
+
+    uint32_t road1_ticks = phase_ticks;
+    uint32_t road2_ticks = phase_ticks;
+    /* A red light can stay on across several phases. */
+    switch (g_phase)
+    {
+        case AUTO_PHASE_ROAD1_RED_ROAD2_GREEN:
+            road1_ticks += g_yellow_ticks + g_clearance_ticks;
+            break;
+        case AUTO_PHASE_ROAD1_RED_ROAD2_YELLOW:
+            road1_ticks += g_clearance_ticks;
+            break;
+        case AUTO_PHASE_BOTH_RED_CLEARANCE:
+            road2_ticks += g_green_ticks + g_yellow_ticks;
+            break;
+        case AUTO_PHASE_ROAD1_GREEN_ROAD2_RED:
+            road2_ticks += g_yellow_ticks;
+            break;
+        case AUTO_PHASE_ROAD1_YELLOW_ROAD2_RED:
+            break;
+    }
+
+    *view = (fsm_automatic_view_t){
+        .colors = g_applied_phase,
+        .road1_seconds = automatic_seconds_ceil(road1_ticks),
+        .road2_seconds = automatic_seconds_ceil(road2_ticks)
+    };
+    return APP_OK;
+}
+
 /* Button IDs/actions are intentionally not mapped here. global.h defines
  * logical event types only; fsm_mode owns mode-switch policy and the Button
  * module owns physical button mapping/debouncing. */

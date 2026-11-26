@@ -147,6 +147,39 @@ static void test_validation_and_fault_cleanup(void)
 
 static uint64_t auto_clock(void) { return clock_tick; }
 
+static void expect_countdown(traffic_color_t road1, uint32_t road1_seconds,
+                             traffic_color_t road2, uint32_t road2_seconds)
+{
+    fsm_automatic_view_t view;
+    assert(fsm_automatic_get_view(&view) == APP_OK);
+    assert(view.colors.road_1 == road1 && view.road1_seconds == road1_seconds);
+    assert(view.colors.road_2 == road2 && view.road2_seconds == road2_seconds);
+}
+
+static void test_countdown_across_phases(void)
+{
+    const timing_config_t timing = {.red_ms = 6000U, .yellow_ms = 2000U, .green_ms = 3000U};
+    clock_tick = 0U;
+    assert(software_timer_init_with_clock(auto_clock) == APP_OK);
+    assert(fsm_automatic_enter(&timing) == APP_OK);
+    expect_countdown(TRAFFIC_RED, 6U, TRAFFIC_GREEN, 3U);
+    clock_tick = 101U;
+    expect_countdown(TRAFFIC_RED, 5U, TRAFFIC_GREEN, 2U);
+    clock_tick = 300U;
+    fsm_automatic_task();
+    expect_countdown(TRAFFIC_RED, 3U, TRAFFIC_YELLOW, 2U);
+    clock_tick = 500U;
+    fsm_automatic_task();
+    expect_countdown(TRAFFIC_RED, 1U, TRAFFIC_RED, 6U);
+    clock_tick = 600U;
+    fsm_automatic_task();
+    expect_countdown(TRAFFIC_GREEN, 3U, TRAFFIC_RED, 5U);
+    clock_tick = 900U;
+    fsm_automatic_task();
+    expect_countdown(TRAFFIC_YELLOW, 2U, TRAFFIC_RED, 2U);
+    fsm_automatic_exit();
+}
+
 static void test_delayed_dispatch(void)
 {
     const timing_config_t timing = {.red_ms = 50U, .yellow_ms = 30U, .green_ms = 20U};
@@ -175,6 +208,7 @@ int main(void)
     test_duration_and_cycles();
     test_validation_and_fault_cleanup();
     test_delayed_dispatch();
+    test_countdown_across_phases();
     puts("Automatic FSM tests passed");
     return 0;
 }

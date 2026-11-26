@@ -117,7 +117,7 @@ app_status_t lcd_format_mode(char *output, size_t capacity, size_t width,
 
     switch (mode) {
     case APP_MODE_AUTOMATIC:
-        label = "Automatic";
+        label = "Auto";
         break;
     case APP_MODE_MANUAL:
         label = "Manual";
@@ -133,11 +133,57 @@ app_status_t lcd_format_mode(char *output, size_t capacity, size_t width,
     return lcd_format_finish(&buffer);
 }
 
+static void lcd_format_light(lcd_format_buffer_t *buffer, const char *label,
+                             traffic_color_t color, uint32_t seconds)
+{
+    static const char color_letter[] = {
+        [TRAFFIC_RED] = 'R', [TRAFFIC_YELLOW] = 'Y', [TRAFFIC_GREEN] = 'G'
+    };
+    lcd_format_text(buffer, label);
+    lcd_format_put(buffer, color_letter[color]);
+    if (seconds < 10U) {
+        lcd_format_put(buffer, '0');
+    }
+    lcd_format_uint(buffer, seconds);
+}
+
+app_status_t lcd_format_countdown(char *output, size_t capacity, size_t width,
+                                  const fsm_automatic_view_t *view)
+{
+    if (output == NULL || width == 0U || view == NULL
+        || (unsigned)view->colors.road_1 > TRAFFIC_GREEN
+        || (unsigned)view->colors.road_2 > TRAFFIC_GREEN) {
+        return APP_INVALID_ARGUMENT;
+    }
+    lcd_format_buffer_t buffer = {output, lcd_format_limit(capacity, width), 0U};
+    lcd_format_light(&buffer, "Auto A:", view->colors.road_1, view->road1_seconds);
+    lcd_format_light(&buffer, " B:", view->colors.road_2, view->road2_seconds);
+    return lcd_format_finish(&buffer);
+}
+
+app_status_t lcd_format_manual(char *output, size_t capacity, size_t width,
+                               const traffic_state_t *phase)
+{
+    static const char *const colors[] = {
+        [TRAFFIC_RED] = "RED", [TRAFFIC_YELLOW] = "YELLOW", [TRAFFIC_GREEN] = "GREEN"
+    };
+    if (output == NULL || width == 0U || phase == NULL
+        || (unsigned)phase->road_1 > TRAFFIC_GREEN || (unsigned)phase->road_2 > TRAFFIC_GREEN) {
+        return APP_INVALID_ARGUMENT;
+    }
+    lcd_format_buffer_t buffer = {output, lcd_format_limit(capacity, width), 0U};
+    lcd_format_text(&buffer, "A:");
+    lcd_format_text(&buffer, colors[phase->road_1]);
+    lcd_format_text(&buffer, " B:");
+    lcd_format_text(&buffer, colors[phase->road_2]);
+    return lcd_format_finish(&buffer);
+}
+
 app_status_t lcd_format_timing(char *output, size_t capacity, size_t width,
                                const timing_config_t *config, traffic_color_t color)
 {
     const char *label;
-    uint32_t duration_ms;
+    uint32_t selected_ms;
 
     if (output == NULL || width == 0u || config == NULL
         || config->green_ms == 0u || config->yellow_ms == 0u
@@ -146,25 +192,27 @@ app_status_t lcd_format_timing(char *output, size_t capacity, size_t width,
     }
 
     switch (color) {
-    case TRAFFIC_RED:
-        label = "Red";
-        duration_ms = config->red_ms;
-        break;
     case TRAFFIC_GREEN:
-        label = "Green";
-        duration_ms = config->green_ms;
+        label = " G:";
+        selected_ms = config->green_ms;
         break;
     case TRAFFIC_YELLOW:
-        label = "Yellow";
-        duration_ms = config->yellow_ms;
+        label = " Y:";
+        selected_ms = config->yellow_ms;
         break;
     default:
         return APP_INVALID_ARGUMENT;
     }
+    const bool whole_seconds = config->red_ms % 1000U == 0U && selected_ms % 1000U == 0U;
+    const uint32_t divisor = whole_seconds ? 1000U : 1U;
     lcd_format_buffer_t buffer = {output, lcd_format_limit(capacity, width), 0U};
+    lcd_format_text(&buffer, "R:");
+    lcd_format_uint(&buffer, config->red_ms / divisor);
+    if (whole_seconds) {
+        lcd_format_put(&buffer, 's');
+    }
     lcd_format_text(&buffer, label);
-    lcd_format_put(&buffer, ' ');
-    lcd_format_uint(&buffer, duration_ms);
-    lcd_format_text(&buffer, " ms");
+    lcd_format_uint(&buffer, selected_ms / divisor);
+    lcd_format_text(&buffer, whole_seconds ? "s" : "ms");
     return lcd_format_finish(&buffer);
 }

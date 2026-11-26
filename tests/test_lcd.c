@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "dht20_protocol.h"
+#include "fsm_automatic.h"
+#include "fsm_manual.h"
 #include "fsm_mode.h"
 #include "lcd.h"
 #include "lcd_display.h"
@@ -9,6 +11,7 @@
 enum { COLUMNS = 20, LCD_ADDRESS_FIXTURE = 0x27, SENSOR_ADDRESS = 0x38 };
 static uint32_t now_ms;
 static app_mode_t mode = APP_MODE_AUTOMATIC;
+static traffic_state_t manual_phase = {TRAFFIC_RED, TRAFFIC_GREEN};
 static char screen[2][COLUMNS + 1];
 static unsigned preparations, lcd_writes, lcd_attempts, sensor_busy, lcd_busy;
 static bool freeze, fail_line;
@@ -28,9 +31,21 @@ app_status_t fsm_mode_get(app_mode_t *out)
     return APP_OK;
 }
 
+app_status_t fsm_automatic_get_view(fsm_automatic_view_t *view)
+{
+    *view = (fsm_automatic_view_t){{TRAFFIC_RED, TRAFFIC_GREEN}, 5U, 3U};
+    return APP_OK;
+}
+
+app_status_t fsm_manual_get_phase(traffic_state_t *phase)
+{
+    *phase = manual_phase;
+    return APP_OK;
+}
+
 app_status_t fsm_tuning_get(fsm_tuning_view_t *view)
 {
-    *view = (fsm_tuning_view_t){{1600, 500, 1000}, TRAFFIC_RED, FSM_TUNING_EDITING, APP_OK};
+    *view = (fsm_tuning_view_t){{1600, 500, 1000}, TRAFFIC_GREEN, FSM_TUNING_EDITING, APP_OK};
     return APP_OK;
 }
 
@@ -211,7 +226,7 @@ int main(void)
     for (unsigned i = 0; i < 40U && strncmp(screen[1], "T:", 2) != 0; ++i) {
         run(1, true);
     }
-    assert(strcmp(screen[0], "Automatic           ") == 0);
+    assert(strcmp(screen[0], "Auto A:R05 B:G03    ") == 0);
     assert(strncmp(screen[1], "T:25.0C H:50.0%", 15) == 0);
     const unsigned writes_before = lcd_writes;
     run(5, true);
@@ -219,10 +234,17 @@ int main(void)
     mode = APP_MODE_TUNING;
     run(8, true);
     assert(strcmp(screen[0], "Tuning              ") == 0);
-    assert(strcmp(screen[1], "Red 1600 ms         ") == 0);
+    assert(strcmp(screen[1], "R:1600 G:1000ms     ") == 0);
     mode = APP_MODE_MANUAL;
-    run(110, true);
+    run(8, true);
     assert(strcmp(screen[0], "Manual              ") == 0);
+    assert(strcmp(screen[1], "A:RED B:GREEN       ") == 0);
+    manual_phase.road_2 = TRAFFIC_YELLOW;
+    run(8, true);
+    assert(strcmp(screen[1], "A:RED B:YELLOW      ") == 0);
+    mode = APP_MODE_AUTOMATIC;
+    run(110, true);
+    assert(strcmp(screen[0], "Auto A:R05 B:G03    ") == 0);
     assert(strcmp(screen[1], "Stale               ") == 0);
     assert(dht20_stop() == APP_OK);
     run(8, true);

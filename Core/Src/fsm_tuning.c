@@ -72,7 +72,7 @@ app_status_t fsm_tuning_enter(const timing_config_t *config)
         return status;
     }
 
-    fsm_tuning.view = (fsm_tuning_view_t){*config, TRAFFIC_RED, FSM_TUNING_EDITING, APP_OK};
+    fsm_tuning.view = (fsm_tuning_view_t){*config, TRAFFIC_GREEN, FSM_TUNING_EDITING, APP_OK};
     fsm_tuning.pending = FSM_TUNING_ACTION_COUNT;
     fsm_tuning.active = true;
     return APP_OK;
@@ -99,18 +99,21 @@ static app_status_t fsm_tuning_adjust(bool increase)
     timing_config_t candidate = fsm_tuning.view.draft;
     uint32_t *duration;
     switch (fsm_tuning.view.selected) {
-    case TRAFFIC_RED: duration = &candidate.red_ms; break;
     case TRAFFIC_GREEN: duration = &candidate.green_ms; break;
     case TRAFFIC_YELLOW: duration = &candidate.yellow_ms; break;
     default: return APP_INVALID_ARGUMENT;
     }
     const int64_t step = fsm_tuning.policy.step_ms;
-    const int64_t adjusted = (int64_t)*duration + (increase ? step : -step);
-    if (adjusted <= 0 || adjusted > UINT32_MAX) {
+    const int64_t delta = increase ? step : -step;
+    const int64_t adjusted_red = candidate.red_ms + delta;
+    const int64_t adjusted_color = *duration + delta;
+    if (adjusted_red <= 0 || adjusted_red > UINT32_MAX
+        || adjusted_color <= 0 || adjusted_color > UINT32_MAX) {
         return APP_INVALID_ARGUMENT;
     }
 
-    *duration = (uint32_t)adjusted;
+    candidate.red_ms = (uint32_t)adjusted_red;
+    *duration = (uint32_t)adjusted_color;
     const app_status_t status = fsm_tuning_validate(&fsm_tuning.policy, &candidate);
     if (status == APP_OK) {
         fsm_tuning.view.draft = candidate;
@@ -129,8 +132,6 @@ void fsm_tuning_task(void)
     fsm_tuning.view.edit_status = APP_OK;
     switch (action) {
     case FSM_TUNING_SELECT_RED:
-        fsm_tuning.view.selected = TRAFFIC_RED;
-        break;
     case FSM_TUNING_SELECT_GREEN:
         fsm_tuning.view.selected = TRAFFIC_GREEN;
         break;
@@ -138,11 +139,8 @@ void fsm_tuning_task(void)
         fsm_tuning.view.selected = TRAFFIC_YELLOW;
         break;
     case FSM_TUNING_NEXT:
-        switch (fsm_tuning.view.selected) {
-        case TRAFFIC_RED: fsm_tuning.view.selected = TRAFFIC_GREEN; break;
-        case TRAFFIC_GREEN: fsm_tuning.view.selected = TRAFFIC_YELLOW; break;
-        default: fsm_tuning.view.selected = TRAFFIC_RED; break;
-        }
+        fsm_tuning.view.selected = fsm_tuning.view.selected == TRAFFIC_GREEN
+            ? TRAFFIC_YELLOW : TRAFFIC_GREEN;
         break;
     case FSM_TUNING_INCREASE:
     case FSM_TUNING_DECREASE:

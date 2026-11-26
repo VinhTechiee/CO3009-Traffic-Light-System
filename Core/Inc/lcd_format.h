@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include "dht20.h"
+#include "fsm_automatic.h"
 
 /* width is the maximum visible characters; capacity includes the terminator.
  * APP_OK means the entire line fits. APP_NO_CAPACITY means a terminated prefix
@@ -19,8 +20,13 @@ app_status_t lcd_format_sensor(char *output, size_t capacity, size_t width,
                                const dht20_info_t *info);
 app_status_t lcd_format_mode(char *output, size_t capacity, size_t width,
                              app_mode_t mode);
-/* Displays one stored duration in ms, including any clearance in red_ms.
- */
+/* Format the Auto mode and both countdowns on one line. */
+app_status_t lcd_format_countdown(char *output, size_t capacity, size_t width,
+                                  const fsm_automatic_view_t *view);
+/* Format the currently applied Manual colors. */
+app_status_t lcd_format_manual(char *output, size_t capacity, size_t width,
+                               const traffic_state_t *phase);
+/* Display red and the green or yellow duration selected for adjustment. */
 app_status_t lcd_format_timing(char *output, size_t capacity, size_t width,
                                const timing_config_t *config, traffic_color_t color);
 

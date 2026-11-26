@@ -194,11 +194,9 @@ app_status_t software_timer_cancel(software_timer_id_t id)
     return APP_NOT_FOUND;
 }
 
-app_status_t software_timer_is_expired(software_timer_id_t id, bool *expired)
+app_status_t software_timer_get_remaining(software_timer_id_t id, uint32_t *remaining_ticks)
 {
-    uint32_t i;
-
-    if (expired == NULL)
+    if (remaining_ticks == NULL)
     {
         return APP_INVALID_ARGUMENT;
     }
@@ -208,17 +206,31 @@ app_status_t software_timer_is_expired(software_timer_id_t id, bool *expired)
     }
 
     software_timer_sample_clock();
-    *expired = false;
-    for (i = 0U; i < SOFTWARE_TIMER_MAX_COUNT; ++i)
+    for (uint32_t i = 0U; i < SOFTWARE_TIMER_MAX_COUNT; ++i)
     {
         if ((g_timers[i].used != 0U) && (g_timers[i].id == id))
         {
-            *expired = (g_timers[i].expired != 0U);
+            *remaining_ticks = g_timers[i].remaining_ticks;
             return APP_OK;
         }
     }
 
     return APP_NOT_FOUND;
+}
+
+app_status_t software_timer_is_expired(software_timer_id_t id, bool *expired)
+{
+    if (expired == NULL)
+    {
+        return APP_INVALID_ARGUMENT;
+    }
+    uint32_t remaining_ticks = 0U;
+    const app_status_t status = software_timer_get_remaining(id, &remaining_ticks);
+    if (status == APP_OK || status == APP_NOT_FOUND)
+    {
+        *expired = status == APP_OK && remaining_ticks == 0U;
+    }
+    return status;
 }
 
 void software_timer_tick(void)

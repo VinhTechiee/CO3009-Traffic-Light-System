@@ -13,6 +13,8 @@ app_status_t software_timer_start(uint32_t duration_ticks, software_timer_id_t *
 app_status_t software_timer_cancel(software_timer_id_t id);
 /* Sticky expiry until cancel; invalid IDs return APP_NOT_FOUND. */
 app_status_t software_timer_is_expired(software_timer_id_t id, bool *expired);
+/* Sample the clock and copy the remaining ticks, or zero after expiry. */
+app_status_t software_timer_get_remaining(software_timer_id_t id, uint32_t *remaining_ticks);
 /* Standalone clock: advance one tick. Bound clock: sample elapsed ticks;
  * optional because start and expiry queries sample the bound clock. */
 void software_timer_tick(void);

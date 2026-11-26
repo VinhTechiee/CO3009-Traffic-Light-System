@@ -19,7 +19,7 @@ The system separates application logic from hardware access, allowing individual
 |---|---|
 | Automatic control | Executes the traffic light sequence using configured signal durations |
 | Manual control | Allows the operator to advance traffic phases using push buttons |
-| Timing adjustment | Supports independent adjustment of Red, Green, and Amber durations |
+| Timing adjustment | Adjusts Red together with Green or Amber |
 | Environmental monitoring | Acquires temperature and humidity from a DHT20 sensor |
 | LCD interface | Displays operating modes, timing parameters, and environmental data |
 | Task scheduling | Supports periodic and one-shot tasks with O(1) tick processing |
@@ -234,7 +234,7 @@ When entering Manual mode, the controller retains the applied traffic phase. Sub
 
 ### 3. Timing Adjustment Mode
 
-Timing Adjustment mode allows the operator to select and modify individual signal durations.
+Timing Adjustment mode starts with the Red/Green pair. A short BTN2 press switches between Red/Green and Red/Amber. Each adjustment changes both durations in the selected pair by the same amount.
 
 | Parameter | Default | Minimum | Maximum |
 |---|---:|---:|---:|
@@ -242,7 +242,7 @@ Timing Adjustment mode allows the operator to select and modify individual signa
 | Green | 3 s | 1 s | 30 s |
 | Amber | 2 s | 1 s | 10 s |
 
-Adjustment step: 1 second.
+The adjustment step is 1 second for each duration in the pair.
 
 The current timing configuration must satisfy:
 
@@ -270,9 +270,9 @@ stateDiagram-v2
 | Button | Automatic | Manual | Timing Adjustment |
 |---|---|---|---|
 | BTN1 | Enter Manual | Enter Tuning | Cancel and return |
-| BTN2 | — | Advance phase | Select parameter / Hold to save |
-| BTN3 | — | — | Increase duration |
-| BTN4 | — | — | Decrease duration |
+| BTN2 | — | Advance phase | Switch pair / Hold to save |
+| BTN3 | — | — | Increase both durations in the pair |
+| BTN4 | — | — | Decrease both durations in the pair |
 
 The table reflects the current application implementation. Final mappings remain subject to physical board verification and confirmation against the course specification.
 

@@ -245,12 +245,14 @@ int main(void)
 
     assert(current_mode() == APP_MODE_AUTOMATIC);
     expect_pair(TRAFFIC_RED, TRAFFIC_GREEN);
-    advance(299U);
+    advance(80U);
+    assert(strcmp(screen[0], "Auto A:R05 B:G03    ") == 0);
+    advance(219U);
     assert(app_runtime_start(&app, &services) == APP_BUSY && SCH_Now() == 299U);
     expect_pair(TRAFFIC_RED, TRAFFIC_GREEN);
     advance(1U);
     expect_pair(TRAFFIC_RED, TRAFFIC_YELLOW);
-    assert(strcmp(screen[0], "Automatic           ") == 0);
+    assert(strncmp(screen[0], "Auto A:", 7U) == 0);
     assert(strncmp(screen[2], "T:25.0C H:50.0%", 15U) == 0);
     assert(sensor_frames >= 1U && bus_contentions >= 1U);
 
@@ -261,22 +263,23 @@ int main(void)
     expect_pair(TRAFFIC_GREEN, TRAFFIC_RED);
     advance(30U);
     assert(strcmp(screen[0], "Manual              ") == 0);
+    assert(strcmp(screen[1], "A:GREEN B:RED       ") == 0);
 
     press(BUTTON_ID_1, 7U);
     assert(current_mode() == APP_MODE_TUNING);
     expect_pair(TRAFFIC_RED, TRAFFIC_RED);
-    expect_draft(5000U, 3000U, 2000U, TRAFFIC_RED);
+    expect_draft(5000U, 3000U, 2000U, TRAFFIC_GREEN);
     press(BUTTON_ID_4, 7U);
-    expect_draft(5000U, 3000U, 2000U, TRAFFIC_RED);
+    expect_draft(4000U, 2000U, 2000U, TRAFFIC_GREEN);
     press(BUTTON_ID_3, 56U);
-    expect_draft(7000U, 3000U, 2000U, TRAFFIC_RED);
+    expect_draft(6000U, 4000U, 2000U, TRAFFIC_GREEN);
     press(BUTTON_ID_2, 7U);
-    expect_draft(7000U, 3000U, 2000U, TRAFFIC_GREEN);
+    expect_draft(6000U, 4000U, 2000U, TRAFFIC_YELLOW);
     press(BUTTON_ID_3, 7U);
-    expect_draft(7000U, 4000U, 2000U, TRAFFIC_GREEN);
+    expect_draft(7000U, 4000U, 3000U, TRAFFIC_YELLOW);
     advance(30U);
     assert(strcmp(screen[0], "Tuning              ") == 0);
-    assert(strcmp(screen[1], "Green 4000 ms       ") == 0);
+    assert(strcmp(screen[1], "R:7s Y:3s           ") == 0);
 
     pressed = BUTTON_MASK(BUTTON_ID_2);
     for (unsigned i = 0U; i < 60U && current_mode() == APP_MODE_TUNING; ++i) {
@@ -289,10 +292,8 @@ int main(void)
     expect_pair(TRAFFIC_RED, TRAFFIC_GREEN);
     advance(1U);
     expect_pair(TRAFFIC_RED, TRAFFIC_YELLOW);
-    advance(200U);
-    expect_pair(TRAFFIC_RED, TRAFFIC_RED);
-    advance(99U);
-    expect_pair(TRAFFIC_RED, TRAFFIC_RED);
+    advance(299U);
+    expect_pair(TRAFFIC_RED, TRAFFIC_YELLOW);
     advance(1U);
     expect_pair(TRAFFIC_GREEN, TRAFFIC_RED);
 
@@ -302,7 +303,7 @@ int main(void)
         press(BUTTON_ID_1, 7U);
         assert(current_mode() == APP_MODE_TUNING);
         press(BUTTON_ID_3, 7U);
-        expect_draft(8000U, 4000U, 2000U, TRAFFIC_RED);
+        expect_draft(8000U, 5000U, 3000U, TRAFFIC_GREEN);
         press(BUTTON_ID_1, 7U);
         assert(current_mode() == APP_MODE_AUTOMATIC);
     }
@@ -314,7 +315,7 @@ int main(void)
     advance(390U);
     expect_pair(TRAFFIC_RED, TRAFFIC_YELLOW);
     advance(200U);
-    expect_pair(TRAFFIC_RED, TRAFFIC_RED);
+    expect_pair(TRAFFIC_RED, TRAFFIC_YELLOW);
     advance(100U);
     expect_pair(TRAFFIC_GREEN, TRAFFIC_RED);
     advance(1110U);
@@ -322,7 +323,7 @@ int main(void)
     assert(current_mode() == APP_MODE_AUTOMATIC);
     display_missing = false;
     advance(200U);
-    assert(strcmp(screen[0], "Automatic           ") == 0);
+    assert(strncmp(screen[0], "Auto A:", 7U) == 0);
     assert(strncmp(screen[2], "Unavailable", 11U) == 0 || strncmp(screen[2], "Stale", 5U) == 0);
     sensor_missing = false;
     advance(1000U);

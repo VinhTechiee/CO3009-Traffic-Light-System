@@ -4,6 +4,7 @@
 #include "global.h"
 
 typedef enum {
+    /* The legacy red selector opens the red/green pair. */
     FSM_TUNING_SELECT_RED, FSM_TUNING_SELECT_GREEN, FSM_TUNING_SELECT_YELLOW,
     FSM_TUNING_NEXT, FSM_TUNING_INCREASE, FSM_TUNING_DECREASE,
     FSM_TUNING_CONFIRM, FSM_TUNING_CANCEL, FSM_TUNING_ACTION_COUNT
@@ -17,7 +18,7 @@ typedef struct {
 typedef struct {
     fsm_tuning_range_t red, green, yellow;
     uint32_t step_ms;
-    /* Legacy field retained for existing initializers. Edits are independent. */
+    /* Legacy field retained for existing initializers. */
     traffic_color_t red_adjusts;
 } fsm_tuning_policy_t;
 
@@ -27,7 +28,7 @@ typedef enum {
 
 typedef struct {
     timing_config_t draft;
-    traffic_color_t selected;
+    traffic_color_t selected; /* Green or yellow, edited together with red. */
     fsm_tuning_result_t result;
     app_status_t edit_status;
 } fsm_tuning_view_t;

@@ -43,6 +43,10 @@ enum {
 
 #define BUTTON_ADJUST_MASK (BUTTON_MASK(BUTTON_ID_3) | BUTTON_MASK(BUTTON_ID_4))
 
+#ifndef CO3009_BUTTON_CONNECTED_MASK
+#define CO3009_BUTTON_CONNECTED_MASK BUTTON_MASK_ALL
+#endif
+
 /* Ba mẫu liên tiếp và trạng thái đã chống dội của từng nút. */
 static bool button_sample1[BUTTON_ID_COUNT];
 static bool button_sample2[BUTTON_ID_COUNT];
@@ -61,9 +65,11 @@ static uint8_t button_event_count;
 
 static bool button_read_pressed(button_id_t id)
 {
-    const bool active_low = (button_active_low_mask & BUTTON_MASK(id)) != 0U;
+    const uint8_t mask = BUTTON_MASK(id);
+    const bool active_low = (button_active_low_mask & mask) != 0U;
 
-    return button_read_high(id) != active_low;
+    return (CO3009_BUTTON_CONNECTED_MASK & mask) != 0U
+        && button_read_high(id) != active_low;
 }
 
 static void button_push_event(button_id_t id, button_input_event_kind_t kind)

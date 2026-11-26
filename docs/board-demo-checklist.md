@@ -67,7 +67,7 @@ After a successful build, disconnect GDB and stop its server. Repeat the program
 
 1. **Automatic.** Observe at least two cycles and confirm the mode on the LCD. At defaults the pair sequence is Red/Green (3 s), Red/Amber (2 s), Green/Red (3 s), Amber/Red (2 s).
 2. **Manual.** Press BTN1 and verify the current pair is retained. Tap BTN2 for one phase advance. Hold BTN2 and confirm it still advances only one phase.
-3. **Tuning.** Press BTN1 from Manual and verify all-red. Raise Red to 6 s, short-press BTN2 to select Green and raise Green to 4 s. Verify another Green increase is rejected. Hold BTN2 for at least 0.6 s to save. Verify the new Automatic timing, then re-enter Tuning, edit Amber and press BTN1 to cancel. Confirm the saved timing is retained. In a separate pass, save Red 7 s, Green 4 s, Amber 2 s and verify 1 s of All-Red after Road 2 Amber.
+3. **Tuning.** Press BTN1 from Manual and verify all-red. Press BTN3 once and verify Red 6 s and Green 4 s. Short-press BTN2 to select Red/Amber, then press BTN3 once and verify Red 7 s and Amber 3 s. Hold BTN2 for at least 0.6 s to apply the timings. Verify the Automatic cycle with Red 7 s, Green 4 s and Amber 3 s. Re-enter Tuning, adjust a pair and press BTN1 to cancel. Confirm the saved timing is retained.
 4. **LCD and DHT20.** Check the mode, selected duration, and temperature and humidity readings. Power down, disconnect each I2C device in turn, and restart. Verify traffic control continues and check recovery after reconnecting.
 5. **Lamp safety.** Capture both Green signals through power-on, reset, phase changes and mode handoffs. Verify that Green outputs never overlap. Save the capture with the profile and commit.
 

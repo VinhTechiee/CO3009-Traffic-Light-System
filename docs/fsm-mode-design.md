@@ -8,7 +8,7 @@ The application starts in Automatic. The button driver debounces inputs and queu
 | --- | --- |
 | Automatic | The scheduler drives the phase timers. BTN1 transfers to Manual using the current output pair. |
 | Manual | A BTN2 press advances one phase. A held BTN2 advances once. BTN1 enters Tuning. |
-| Tuning | Both roads stay red. A short BTN2 press selects Red, Green, then Amber. BTN3 increases and BTN4 decreases the selected duration. Hold BTN2 to save or press BTN1 to cancel. Both return to Automatic. |
+| Tuning | Both roads stay red. Tuning starts with Red/Green. A short BTN2 press switches between Red/Green and Red/Amber. BTN3 increases and BTN4 decreases both durations in the selected pair. Hold BTN2 to save or press BTN1 to cancel. Both return to Automatic. |
 
 The driver requires three consistent 10 ms samples. BTN2's long threshold is 500 ms after the debounced press. BTN3 and BTN4 repeat after 500 ms and every 250 ms thereafter. Holding both suppresses adjustments until both release. USER has no demo action.
 
@@ -24,7 +24,7 @@ Tuning receives a copy of the committed durations. Rejected edits leave the draf
 | Green | 3000 ms | 1000–30000 ms |
 | Amber (Yellow in code and on the LCD) | 2000 ms | 1000–10000 ms |
 
-Each edit changes one duration in 1000 ms steps. Both roads share the same configuration. The shared timing validator requires `Red >= Green + Amber` in milliseconds and again after rounding each duration up to 10 ms ticks. The demo values and gestures are provisional until checked against the course handout.
+Each edit changes Red and the selected color together in 1000 ms steps. Both roads share the same configuration. An edit preserves the difference between Red and Green plus Amber in milliseconds. The timing validator also checks `Red >= Green + Amber` after rounding each duration up to 10 ms ticks. The demo values and gestures are provisional until checked against the course handout.
 
 ## Automatic cycle
 
@@ -40,4 +40,4 @@ Automatic computes `clearance_ticks = red_ticks - green_ticks - amber_ticks`. Th
 
 Each road's nominal red interval is the other road's Green plus Amber plus the shared clearance. For example, Red 7 s, Green 4 s and Amber 2 s give a 1 s All-Red phase. The all-red commands used at startup and mode changes are separate output checks without a scheduled dwell. If foreground dispatch is late, the next phase starts when serviced and receives its full duration.
 
-The [Automatic tests](../tests/test_fsm_automatic.c) cover positive clearance across repeated cycles, zero-clearance skipping, invalid rounded timings and late dispatch. The [application test](../tests/test_app_runtime.c) verifies the 1 s transition boundaries after saving an edit.
+The [Automatic tests](../tests/test_fsm_automatic.c) cover positive clearance across repeated cycles, zero-clearance skipping, invalid rounded timings and late dispatch. The [application test](../tests/test_app_runtime.c) verifies the cycle after saving paired edits.

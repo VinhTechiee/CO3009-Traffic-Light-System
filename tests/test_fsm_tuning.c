@@ -28,19 +28,25 @@ int main(void)
     assert(fsm_tuning_configure(&policy) == APP_BUSY);
 
     view = act(FSM_TUNING_INCREASE, BUTTON_RELEASE);
-    assert(view.draft.red_ms == 400);
+    assert(view.selected == TRAFFIC_GREEN && view.draft.red_ms == 400);
     view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
-    assert(view.draft.red_ms == 500 && view.draft.green_ms == 300);
+    assert(view.draft.red_ms == 500 && view.draft.green_ms == 400 && view.draft.yellow_ms == 100);
+    view = act(FSM_TUNING_NEXT, BUTTON_PRESS);
+    assert(view.selected == TRAFFIC_YELLOW);
+    view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
+    assert(view.draft.red_ms == 600 && view.draft.green_ms == 400 && view.draft.yellow_ms == 200);
+    view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
+    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.red_ms == 600
+           && view.draft.yellow_ms == 200);
+    view = act(FSM_TUNING_DECREASE, BUTTON_PRESS);
+    assert(view.draft.red_ms == 500 && view.draft.green_ms == 400 && view.draft.yellow_ms == 100);
+    view = act(FSM_TUNING_DECREASE, BUTTON_PRESS);
+    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.red_ms == 500
+           && view.draft.yellow_ms == 100);
     view = act(FSM_TUNING_NEXT, BUTTON_PRESS);
     assert(view.selected == TRAFFIC_GREEN);
     view = act(FSM_TUNING_DECREASE, BUTTON_PRESS);
-    assert(view.draft.green_ms == 200 && view.draft.red_ms == 500);
-    view = act(FSM_TUNING_SELECT_YELLOW, BUTTON_PRESS);
-    assert(view.selected == TRAFFIC_YELLOW);
-    view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
-    assert(view.draft.yellow_ms == 200 && view.draft.red_ms == 500);
-    view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
-    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.yellow_ms == 200);
+    assert(view.draft.red_ms == 400 && view.draft.green_ms == 300 && view.draft.yellow_ms == 100);
     assert(act(FSM_TUNING_CANCEL, BUTTON_PRESS).result == FSM_TUNING_CANCELLED);
 
     fsm_tuning_exit();
@@ -67,13 +73,14 @@ int main(void)
     assert(fsm_tuning_validate(&fine, &extra_but_too_short_ticks) == APP_INVALID_ARGUMENT);
     assert(fsm_tuning_validate(&fine, &rounded_ok) == APP_OK);
     assert(fsm_tuning_validate(&fine, &out_of_range) == APP_INVALID_ARGUMENT);
-    const timing_config_t before_tick_failure = {.red_ms = 30, .green_ms = 10, .yellow_ms = 11};
+    const timing_config_t before_tick_failure = {.red_ms = 31, .green_ms = 20, .yellow_ms = 11};
     assert(fsm_tuning_configure(&fine) == APP_OK);
     assert(fsm_tuning_enter(&edit_boundary) == APP_INVALID_ARGUMENT);
     assert(fsm_tuning_enter(&before_tick_failure) == APP_OK);
     (void)act(FSM_TUNING_SELECT_GREEN, BUTTON_PRESS);
     view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
-    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.green_ms == 10);
+    assert(view.edit_status == APP_INVALID_ARGUMENT
+           && view.draft.red_ms == 31 && view.draft.green_ms == 20);
     assert(act(FSM_TUNING_CONFIRM, BUTTON_PRESS).result == FSM_TUNING_CONFIRMED);
     fsm_tuning_exit();
 
@@ -85,9 +92,11 @@ int main(void)
     assert(fsm_tuning_configure(&policy) == APP_OK);
     assert(fsm_tuning_enter(&maximum) == APP_OK);
     view = act(FSM_TUNING_INCREASE, BUTTON_PRESS);
-    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.red_ms == UINT32_MAX);
+    assert(view.edit_status == APP_INVALID_ARGUMENT && view.draft.red_ms == UINT32_MAX
+           && view.draft.green_ms == 1);
     (void)act(FSM_TUNING_SELECT_YELLOW, BUTTON_PRESS);
-    assert(act(FSM_TUNING_DECREASE, BUTTON_PRESS).draft.yellow_ms == UINT32_MAX - 6U);
+    view = act(FSM_TUNING_DECREASE, BUTTON_PRESS);
+    assert(view.draft.red_ms == UINT32_MAX - 1U && view.draft.yellow_ms == UINT32_MAX - 6U);
     puts("Tuning tests passed");
     return 0;
 }
